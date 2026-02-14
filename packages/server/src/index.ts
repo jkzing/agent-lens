@@ -14,6 +14,10 @@ type ParsedSpan = {
   startTimeUnixNano: string | null;
   endTimeUnixNano: string | null;
   durationNs: number | null;
+  attributes: string | null;
+  statusCode: number | null;
+  resourceAttributes: string | null;
+  events: string | null;
 };
 
 const app = new Hono();
@@ -37,6 +41,10 @@ CREATE TABLE IF NOT EXISTS spans (
   start_time_unix_nano TEXT,
   end_time_unix_nano TEXT,
   duration_ns INTEGER,
+  attributes TEXT,
+  status_code INTEGER,
+  resource_attributes TEXT,
+  events TEXT,
   payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
@@ -44,20 +52,28 @@ CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
 `);
 
 const existingColumns = db
-  .prepare("PRAGMA table_info(spans)")
+  .prepare('PRAGMA table_info(spans)')
   .all() as Array<{ name: string }>;
 const columnSet = new Set(existingColumns.map((col) => col.name));
 
-if (!columnSet.has('trace_id')) {
-  db.exec('ALTER TABLE spans ADD COLUMN trace_id TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN span_id TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN parent_span_id TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN name TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN kind INTEGER');
-  db.exec('ALTER TABLE spans ADD COLUMN start_time_unix_nano TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN end_time_unix_nano TEXT');
-  db.exec('ALTER TABLE spans ADD COLUMN duration_ns INTEGER');
-}
+const ensureColumn = (name: string, type: string) => {
+  if (!columnSet.has(name)) {
+    db.exec(`ALTER TABLE spans ADD COLUMN ${name} ${type}`);
+  }
+};
+
+ensureColumn('trace_id', 'TEXT');
+ensureColumn('span_id', 'TEXT');
+ensureColumn('parent_span_id', 'TEXT');
+ensureColumn('name', 'TEXT');
+ensureColumn('kind', 'INTEGER');
+ensureColumn('start_time_unix_nano', 'TEXT');
+ensureColumn('end_time_unix_nano', 'TEXT');
+ensureColumn('duration_ns', 'INTEGER');
+ensureColumn('attributes', 'TEXT');
+ensureColumn('status_code', 'INTEGER');
+ensureColumn('resource_attributes', 'TEXT');
+ensureColumn('events', 'TEXT');
 
 const insertSpan = db.prepare(`
   INSERT INTO spans (
@@ -70,8 +86,12 @@ const insertSpan = db.prepare(`
     start_time_unix_nano,
     end_time_unix_nano,
     duration_ns,
+    attributes,
+    status_code,
+    resource_attributes,
+    events,
     payload
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 function parseDurationNs(start?: string | number, end?: string | number): number | null {
@@ -84,17 +104,55 @@ function parseDurationNs(start?: string | number, end?: string | number): number
   return Number(diff);
 }
 
+function toAttributeValue(value: any): unknown {
+  if (!value || typeof value !== 'object') return value;
+  if ('stringValue' in value) return value.stringValue;
+  if ('intValue' in value) return Number(value.intValue);
+  if ('doubleValue' in value) return Number(value.doubleValue);
+  if ('boolValue' in value) return Boolean(value.boolValue);
+  if ('bytesValue' in value) return String(value.bytesValue);
+  if ('arrayValue' in value) {
+    const values = Array.isArray(value.arrayValue?.values) ? value.arrayValue.values : [];
+    return values.map((item: any) => toAttributeValue(item));
+  }
+  if ('kvlistValue' in value) {
+    const values = Array.isArray(value.kvlistValue?.values) ? value.kvlistValue.values : [];
+    const result: Record<string, unknown> = {};
+    for (const item of values) {
+      if (!item?.key) continue;
+      result[item.key] = toAttributeValue(item.value);
+    }
+    return result;
+  }
+  return value;
+}
+
+function parseAttributeList(attributes: any): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const items = Array.isArray(attributes) ? attributes : [];
+
+  for (const item of items) {
+    if (!item?.key) continue;
+    result[item.key] = toAttributeValue(item.value);
+  }
+
+  return result;
+}
+
 function extractSpans(body: any): ParsedSpan[] {
   const output: ParsedSpan[] = [];
   const resourceSpans = Array.isArray(body?.resourceSpans) ? body.resourceSpans : [];
 
   for (const resourceSpan of resourceSpans) {
+    const resourceAttrs = parseAttributeList(resourceSpan?.resource?.attributes);
     const scopeSpans = Array.isArray(resourceSpan?.scopeSpans) ? resourceSpan.scopeSpans : [];
 
     for (const scopeSpan of scopeSpans) {
       const spans = Array.isArray(scopeSpan?.spans) ? scopeSpan.spans : [];
 
       for (const span of spans) {
+        const events = Array.isArray(span?.events) ? span.events : [];
+
         output.push({
           traceId: span?.traceId ?? '',
           spanId: span?.spanId ?? '',
@@ -103,7 +161,11 @@ function extractSpans(body: any): ParsedSpan[] {
           kind: typeof span?.kind === 'number' ? span.kind : null,
           startTimeUnixNano: span?.startTimeUnixNano ? String(span.startTimeUnixNano) : null,
           endTimeUnixNano: span?.endTimeUnixNano ? String(span.endTimeUnixNano) : null,
-          durationNs: parseDurationNs(span?.startTimeUnixNano, span?.endTimeUnixNano)
+          durationNs: parseDurationNs(span?.startTimeUnixNano, span?.endTimeUnixNano),
+          attributes: JSON.stringify(parseAttributeList(span?.attributes)),
+          statusCode: typeof span?.status?.code === 'number' ? span.status.code : null,
+          resourceAttributes: JSON.stringify(resourceAttrs),
+          events: events.length > 0 ? JSON.stringify(events) : null
         });
       }
     }
@@ -121,10 +183,11 @@ app.post('/v1/traces', async (c) => {
   }
 
   const receivedAt = new Date().toISOString();
+  const payload = JSON.stringify(body);
   const parsedSpans = extractSpans(body);
 
   if (parsedSpans.length === 0) {
-    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, JSON.stringify(body));
+    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, payload);
     return c.json({ ok: true, inserted: 1, parsedSpans: 0 });
   }
 
@@ -140,7 +203,11 @@ app.post('/v1/traces', async (c) => {
         row.startTimeUnixNano,
         row.endTimeUnixNano,
         row.durationNs,
-        JSON.stringify(body)
+        row.attributes,
+        row.statusCode,
+        row.resourceAttributes,
+        row.events,
+        payload
       );
     }
   });
@@ -165,7 +232,8 @@ app.get('/api/spans', (c) => {
 
   const rows = db
     .prepare(
-      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns
+      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
+              attributes, status_code, resource_attributes, events
        FROM spans
        ORDER BY id DESC
        LIMIT ? OFFSET ?`
@@ -242,7 +310,8 @@ app.get('/api/traces/:traceId', (c) => {
 
   const rows = db
     .prepare(
-      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns
+      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
+              attributes, status_code, resource_attributes, events
        FROM spans
        WHERE trace_id = ?
        ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC
@@ -259,6 +328,10 @@ app.get('/api/traces/:traceId', (c) => {
       start_time_unix_nano: string | null;
       end_time_unix_nano: string | null;
       duration_ns: number | null;
+      attributes: string | null;
+      status_code: number | null;
+      resource_attributes: string | null;
+      events: string | null;
     }>;
 
   const totalRow = db

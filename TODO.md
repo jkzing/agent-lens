@@ -24,10 +24,10 @@
 - [x] 支持分页参数（`offset` / `limit`）
 
 ### 1.2 数据模型优化
-- [ ] spans 表添加 `attributes` 列（TEXT/JSON），存储 OTEL span attributes
-- [ ] spans 表添加 `status_code` 列（记录 OK/ERROR）
-- [ ] spans 表添加 `resource_attributes` 列（service.name 等资源信息）
-- [ ] 考虑添加 `events` 列（OTEL span events，包含 exceptions 等）
+- [x] spans 表添加 `attributes` 列（TEXT/JSON），存储 OTEL span attributes
+- [x] spans 表添加 `status_code` 列（记录 OK/ERROR）
+- [x] spans 表添加 `resource_attributes` 列（service.name 等资源信息）
+- [x] 考虑添加 `events` 列（OTEL span events，包含 exceptions 等）
 
 ### 1.3 OTEL 协议兼容
 - [ ] 支持 protobuf 格式（`Content-Type: application/x-protobuf`），不仅是 JSON
