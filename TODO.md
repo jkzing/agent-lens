@@ -19,9 +19,9 @@
 ## Phase 1: Server 完善
 
 ### 1.1 Trace 聚合查询
-- [ ] `GET /api/traces` — 按 traceId 聚合，返回 trace 列表（每个 trace 包含 span 数量、总耗时、根 span 名称、时间戳）
-- [ ] `GET /api/traces/:traceId` — 返回单个 trace 的所有 spans（按时间排序，保留父子关系）
-- [ ] 支持分页参数（`offset` / `limit`）
+- [x] `GET /api/traces` — 按 traceId 聚合，返回 trace 列表（每个 trace 包含 span 数量、总耗时、根 span 名称、时间戳）
+- [x] `GET /api/traces/:traceId` — 返回单个 trace 的所有 spans（按时间排序，保留父子关系）
+- [x] 支持分页参数（`offset` / `limit`）
 
 ### 1.2 数据模型优化
 - [ ] spans 表添加 `attributes` 列（TEXT/JSON），存储 OTEL span attributes

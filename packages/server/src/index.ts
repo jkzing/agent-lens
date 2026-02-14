@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { cors } from 'hono/cors';
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -98,7 +98,7 @@ function extractSpans(body: any): ParsedSpan[] {
         output.push({
           traceId: span?.traceId ?? '',
           spanId: span?.spanId ?? '',
-          parentSpanId: span?.parentSpanId ?? null,
+          parentSpanId: span?.parentSpanId ? String(span.parentSpanId) : null,
           name: span?.name ?? 'unknown',
           kind: typeof span?.kind === 'number' ? span.kind : null,
           startTimeUnixNano: span?.startTimeUnixNano ? String(span.startTimeUnixNano) : null,
@@ -150,20 +150,167 @@ app.post('/v1/traces', async (c) => {
   return c.json({ ok: true, inserted: parsedSpans.length, parsedSpans: parsedSpans.length });
 });
 
-app.get('/api/spans', (c) => {
+function getPagination(c: Context) {
   const limitParam = Number(c.req.query('limit') || 100);
+  const offsetParam = Number(c.req.query('offset') || 0);
+
   const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 500)) : 100;
+  const offset = Number.isFinite(offsetParam) ? Math.max(0, offsetParam) : 0;
+
+  return { limit, offset };
+}
+
+app.get('/api/spans', (c) => {
+  const { limit, offset } = getPagination(c);
 
   const rows = db
     .prepare(
       `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns
        FROM spans
        ORDER BY id DESC
-       LIMIT ?`
+       LIMIT ? OFFSET ?`
     )
-    .all(limit);
+    .all(limit, offset);
 
-  return c.json({ ok: true, items: rows });
+  return c.json({ ok: true, items: rows, pagination: { offset, limit } });
+});
+
+app.get('/api/traces', (c) => {
+  const { limit, offset } = getPagination(c);
+
+  const items = db
+    .prepare(
+      `WITH trace_base AS (
+         SELECT
+           trace_id,
+           COUNT(*) AS span_count,
+           MIN(CAST(start_time_unix_nano AS INTEGER)) AS start_ns,
+           MAX(CAST(end_time_unix_nano AS INTEGER)) AS end_ns,
+           MIN(received_at) AS first_received_at,
+           MAX(received_at) AS last_received_at
+         FROM spans
+         WHERE trace_id IS NOT NULL AND trace_id != ''
+         GROUP BY trace_id
+       )
+       SELECT
+         tb.trace_id,
+         tb.span_count,
+         CASE
+           WHEN tb.start_ns IS NOT NULL AND tb.end_ns IS NOT NULL AND tb.end_ns >= tb.start_ns THEN tb.end_ns - tb.start_ns
+           ELSE NULL
+         END AS duration_ns,
+         COALESCE((
+           SELECT s.name
+           FROM spans s
+           WHERE s.trace_id = tb.trace_id
+             AND (s.parent_span_id IS NULL OR s.parent_span_id = '')
+           ORDER BY CAST(s.start_time_unix_nano AS INTEGER) ASC, s.id ASC
+           LIMIT 1
+         ), '(unknown root)') AS root_span_name,
+         tb.start_ns,
+         tb.end_ns,
+         tb.first_received_at,
+         tb.last_received_at
+       FROM trace_base tb
+       ORDER BY tb.last_received_at DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(limit, offset);
+
+  const totalRow = db
+    .prepare(
+      `SELECT COUNT(*) AS total
+       FROM (
+         SELECT trace_id
+         FROM spans
+         WHERE trace_id IS NOT NULL AND trace_id != ''
+         GROUP BY trace_id
+       ) t`
+    )
+    .get() as { total: number };
+
+  return c.json({
+    ok: true,
+    items,
+    pagination: { offset, limit, total: totalRow.total }
+  });
+});
+
+app.get('/api/traces/:traceId', (c) => {
+  const traceId = c.req.param('traceId');
+  const { limit, offset } = getPagination(c);
+
+  const rows = db
+    .prepare(
+      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns
+       FROM spans
+       WHERE trace_id = ?
+       ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC
+       LIMIT ? OFFSET ?`
+    )
+    .all(traceId, limit, offset) as Array<{
+      id: number;
+      received_at: string;
+      trace_id: string;
+      span_id: string | null;
+      parent_span_id: string | null;
+      name: string | null;
+      kind: number | null;
+      start_time_unix_nano: string | null;
+      end_time_unix_nano: string | null;
+      duration_ns: number | null;
+    }>;
+
+  const totalRow = db
+    .prepare('SELECT COUNT(*) AS total FROM spans WHERE trace_id = ?')
+    .get(traceId) as { total: number };
+
+  const bySpanId = new Map<string, (typeof rows)[number]>();
+  rows.forEach((row) => {
+    if (row.span_id) bySpanId.set(row.span_id, row);
+  });
+
+  const depthMemo = new Map<string, number>();
+  const calcDepth = (row: (typeof rows)[number], seen = new Set<string>()): number => {
+    if (!row.span_id) return 0;
+    if (depthMemo.has(row.span_id)) return depthMemo.get(row.span_id)!;
+    if (!row.parent_span_id) {
+      depthMemo.set(row.span_id, 0);
+      return 0;
+    }
+
+    const parent = bySpanId.get(row.parent_span_id);
+    if (!parent) {
+      depthMemo.set(row.span_id, 0);
+      return 0;
+    }
+
+    if (seen.has(row.span_id)) {
+      depthMemo.set(row.span_id, 0);
+      return 0;
+    }
+
+    seen.add(row.span_id);
+    const depth = calcDepth(parent, seen) + 1;
+    depthMemo.set(row.span_id, depth);
+    return depth;
+  };
+
+  const items = rows.map((row) => {
+    const depth = calcDepth(row);
+    return {
+      ...row,
+      has_parent: Boolean(row.parent_span_id),
+      depth
+    };
+  });
+
+  return c.json({
+    ok: true,
+    traceId,
+    items,
+    pagination: { offset, limit, total: totalRow.total }
+  });
 });
 
 const port = Number(process.env.PORT || 4318);
