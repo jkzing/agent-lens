@@ -176,19 +176,46 @@ function extractSpans(body: any): ParsedSpan[] {
 
 app.get('/health', (c) => c.json({ ok: true, service: 'agent-lens-server' }));
 
-app.post('/v1/traces', async (c) => {
-  const body = await c.req.json().catch(() => null);
-  if (!body) {
-    return c.json({ ok: false, error: 'Invalid JSON body' }, 400);
+function otlpExportResponse(c: Context, rejectedSpans = 0, errorMessage = '') {
+  if (rejectedSpans > 0 || errorMessage) {
+    return c.json({
+      partialSuccess: {
+        rejectedSpans,
+        errorMessage
+      }
+    });
   }
 
+  return c.json({});
+}
+
+app.post('/v1/traces', async (c) => {
+  const contentType = (c.req.header('content-type') || '').toLowerCase();
   const receivedAt = new Date().toISOString();
+
+  if (contentType.includes('application/x-protobuf')) {
+    const raw = Buffer.from(await c.req.arrayBuffer());
+    const payload = JSON.stringify({
+      contentType: 'application/x-protobuf',
+      encoding: 'base64',
+      body: raw.toString('base64')
+    });
+
+    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, payload);
+    return otlpExportResponse(c);
+  }
+
+  const body = await c.req.json().catch(() => null);
+  if (!body) {
+    return otlpExportResponse(c, 1, 'Invalid JSON payload');
+  }
+
   const payload = JSON.stringify(body);
   const parsedSpans = extractSpans(body);
 
   if (parsedSpans.length === 0) {
     insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, payload);
-    return c.json({ ok: true, inserted: 1, parsedSpans: 0 });
+    return otlpExportResponse(c, 0, 'No valid spans found in payload');
   }
 
   const tx = db.transaction((rows: ParsedSpan[]) => {
@@ -214,7 +241,7 @@ app.post('/v1/traces', async (c) => {
 
   tx(parsedSpans);
 
-  return c.json({ ok: true, inserted: parsedSpans.length, parsedSpans: parsedSpans.length });
+  return otlpExportResponse(c);
 });
 
 function getPagination(c: Context) {

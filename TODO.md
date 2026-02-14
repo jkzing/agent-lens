@@ -30,8 +30,8 @@
 - [x] 考虑添加 `events` 列（OTEL span events，包含 exceptions 等）
 
 ### 1.3 OTEL 协议兼容
-- [ ] 支持 protobuf 格式（`Content-Type: application/x-protobuf`），不仅是 JSON
-- [ ] 正确响应 OTEL Exporter 的 partial success
+- [x] 支持 protobuf 格式（`Content-Type: application/x-protobuf`），不仅是 JSON
+- [x] 正确响应 OTEL Exporter 的 partial success
 
 ---
 
