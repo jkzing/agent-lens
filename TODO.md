@@ -60,17 +60,17 @@
 ## Phase 3: Agent 可观测特性
 
 ### 3.1 Token 用量统计
-- [ ] 从 span attributes 提取 `gen_ai.usage.input_tokens`、`gen_ai.usage.output_tokens`
-- [ ] 每个 trace 的总 token 用量汇总
-- [ ] UI 上显示 token 数和估算成本
+- [x] 从 span attributes 提取 `gen_ai.usage.input_tokens`、`gen_ai.usage.output_tokens`
+- [x] 每个 trace 的总 token 用量汇总
+- [x] UI 上显示 token 数和估算成本
 
 ### 3.2 循环检测
-- [ ] 检测同一 trace 中重复的 tool call 模式
-- [ ] UI 上标记可能的循环（warning badge）
+- [x] 检测同一 trace 中重复的 tool call 模式
+- [x] UI 上标记可能的循环（warning badge）
 
 ### 3.3 多 Agent 视图
-- [ ] 从 resource attributes 中提取 `service.name` 区分不同 agent
-- [ ] UI 上按 agent 筛选/分组
+- [x] 从 resource attributes 中提取 `service.name` 区分不同 agent
+- [x] UI 上按 agent 筛选/分组
 
 ---
 

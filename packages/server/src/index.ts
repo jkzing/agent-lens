@@ -270,6 +270,21 @@ app.get('/api/spans', (c) => {
   return c.json({ ok: true, items: rows, pagination: { offset, limit } });
 });
 
+function parseJson(input: string | null): Record<string, any> {
+  if (!input) return {};
+  try {
+    const parsed = JSON.parse(input);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function toNumber(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 app.get('/api/traces', (c) => {
   const { limit, offset } = getPagination(c);
 
@@ -312,6 +327,36 @@ app.get('/api/traces', (c) => {
     )
     .all(limit, offset);
 
+  const enrichedItems = (items as Array<any>).map((item) => {
+    const spanRows = db
+      .prepare('SELECT attributes, resource_attributes FROM spans WHERE trace_id = ?')
+      .all(item.trace_id) as Array<{ attributes: string | null; resource_attributes: string | null }>;
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    const serviceNames = new Set<string>();
+
+    for (const row of spanRows) {
+      const attrs = parseJson(row.attributes);
+      inputTokens += toNumber(attrs['gen_ai.usage.input_tokens']);
+      outputTokens += toNumber(attrs['gen_ai.usage.output_tokens']);
+
+      const resourceAttrs = parseJson(row.resource_attributes);
+      const serviceName = resourceAttrs['service.name'];
+      if (typeof serviceName === 'string' && serviceName.trim()) {
+        serviceNames.add(serviceName.trim());
+      }
+    }
+
+    return {
+      ...item,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      service_names: Array.from(serviceNames),
+      primary_service_name: Array.from(serviceNames)[0] ?? 'unknown'
+    };
+  });
+
   const totalRow = db
     .prepare(
       `SELECT COUNT(*) AS total
@@ -326,7 +371,7 @@ app.get('/api/traces', (c) => {
 
   return c.json({
     ok: true,
-    items,
+    items: enrichedItems,
     pagination: { offset, limit, total: totalRow.total }
   });
 });
