@@ -1,0 +1,17 @@
+{
+  "name": "agent-lens",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TS-native AI Agent observability toolkit",
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "tsx packages/cli/src/index.ts",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "node-gyp": "^12.2.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}
