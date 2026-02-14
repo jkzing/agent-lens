@@ -83,8 +83,8 @@
 - [x] 优雅关闭（cleanup SQLite connection）
 
 ### 4.2 `npx agent-lens` 零配置体验
-- [ ] 确保 `npx agent-lens` 直接可用（package.json bin 配置）
-- [ ] README 写清楚快速开始步骤
+- [x] 确保 `npx agent-lens` 直接可用（package.json bin 配置）
+- [x] README 写清楚快速开始步骤
 
 ### 4.3 OpenClaw 集成验证
 - [ ] 配置 OpenClaw `diagnostics.otel.endpoint` 指向 agent-lens
