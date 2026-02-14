@@ -30,6 +30,8 @@ type SpanRow = {
   depth: number;
 };
 
+type SpanKindType = 'llm' | 'tool' | 'internal';
+
 const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:4318';
 
 function formatDurationNs(durationNs: number | null): string {
@@ -51,10 +53,40 @@ function withinRange(iso: string, range: string): boolean {
   return true;
 }
 
+function parseJsonObject(input: string | null): Record<string, any> {
+  if (!input) return {};
+  try {
+    const obj = JSON.parse(input);
+    return obj && typeof obj === 'object' ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function detectSpanType(span: SpanRow, attrs: Record<string, any>): SpanKindType {
+  const name = (span.name || '').toLowerCase();
+  const keys = Object.keys(attrs).join(' ').toLowerCase();
+
+  if (name.includes('llm') || keys.includes('gen_ai') || keys.includes('openai') || keys.includes('anthropic')) {
+    return 'llm';
+  }
+  if (name.includes('tool') || keys.includes('tool') || keys.includes('function_call')) {
+    return 'tool';
+  }
+  return 'internal';
+}
+
+function spanTypeColor(type: SpanKindType): string {
+  if (type === 'llm') return 'bg-violet-500/80';
+  if (type === 'tool') return 'bg-cyan-500/80';
+  return 'bg-slate-500/80';
+}
+
 export default function App() {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
   const [spans, setSpans] = useState<SpanRow[]>([]);
+  const [selectedSpanId, setSelectedSpanId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
@@ -80,7 +112,9 @@ export default function App() {
     const res = await fetch(`${API_BASE}/api/traces/${encodeURIComponent(traceId)}?limit=500&offset=0`);
     if (!res.ok) throw new Error(`Load trace detail failed: ${res.status}`);
     const data = await res.json();
-    setSpans(Array.isArray(data.items) ? data.items : []);
+    const items = (Array.isArray(data.items) ? data.items : []) as SpanRow[];
+    setSpans(items);
+    setSelectedSpanId(items[0]?.id ?? null);
   };
 
   const refreshAll = async () => {
@@ -97,6 +131,7 @@ export default function App() {
   useEffect(() => {
     if (!selectedTraceId) {
       setSpans([]);
+      setSelectedSpanId(null);
       return;
     }
 
@@ -117,6 +152,22 @@ export default function App() {
   );
 
   const selectedTrace = filteredTraces.find((t) => t.trace_id === selectedTraceId) || null;
+  const selectedSpan = spans.find((s) => s.id === selectedSpanId) || null;
+
+  const timelineMeta = useMemo(() => {
+    const starts = spans
+      .map((s) => (s.start_time_unix_nano ? Number(s.start_time_unix_nano) : null))
+      .filter((v): v is number => Number.isFinite(v));
+    const ends = spans
+      .map((s) => (s.end_time_unix_nano ? Number(s.end_time_unix_nano) : null))
+      .filter((v): v is number => Number.isFinite(v));
+
+    const minStart = starts.length ? Math.min(...starts) : 0;
+    const maxEnd = ends.length ? Math.max(...ends) : minStart + 1;
+    const total = Math.max(1, maxEnd - minStart);
+
+    return { minStart, maxEnd, total };
+  }, [spans]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -160,7 +211,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 lg:max-h-[calc(100vh-160px)] lg:overflow-auto">
             <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
             {loading ? <p className="text-sm text-slate-400">Loading traces...</p> : null}
@@ -192,42 +243,142 @@ export default function App() {
             </div>
           </aside>
 
-          <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-            <h2 className="mb-3 text-lg font-semibold">Trace Detail</h2>
-            {!selectedTrace ? (
-              <p className="text-sm text-slate-400">Select a trace from the left list.</p>
-            ) : (
-              <>
-                <div className="font-mono text-xs text-slate-300">traceId: {selectedTrace.trace_id}</div>
-                <div className="font-mono text-xs text-slate-300">root: {selectedTrace.root_span_name}</div>
-                <div className="font-mono text-xs text-slate-300">
-                  total duration: {formatDurationNs(selectedTrace.duration_ns)}
-                </div>
-                <div className="mb-3 font-mono text-xs text-slate-300">span count: {selectedTrace.span_count}</div>
-                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-300">Spans</h3>
-                {spans.length === 0 ? (
-                  <p className="text-sm text-slate-400">No spans found for this trace.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {spans.map((span) => (
-                      <article key={span.id} className="rounded-lg border border-slate-700 bg-slate-950/40 p-3">
-                        <div className="mb-1 flex items-center justify-between gap-2">
-                          <strong className="text-sm">{span.name || 'unknown'}</strong>
-                          <span className="text-xs text-slate-300">{formatDurationNs(span.duration_ns)}</span>
-                        </div>
-                        <div className="font-mono text-xs text-slate-300">spanId: {span.span_id || '-'}</div>
-                        <div className="font-mono text-xs text-slate-300">
-                          parentSpanId: {span.parent_span_id || '-'}
-                        </div>
-                        <div className="font-mono text-xs text-slate-400">
-                          received: {new Date(span.received_at).toLocaleString()}
-                        </div>
-                      </article>
-                    ))}
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              <h2 className="mb-3 text-lg font-semibold">Trace Timeline</h2>
+              {!selectedTrace ? (
+                <p className="text-sm text-slate-400">Select a trace from the left list.</p>
+              ) : (
+                <>
+                  <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs text-slate-300">
+                    <div>traceId: {selectedTrace.trace_id}</div>
+                    <div>root: {selectedTrace.root_span_name}</div>
+                    <div>duration: {formatDurationNs(selectedTrace.duration_ns)}</div>
+                    <div>span count: {selectedTrace.span_count}</div>
                   </div>
-                )}
-              </>
-            )}
+
+                  <div className="mb-3 flex items-center gap-3 text-xs text-slate-300">
+                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-violet-500" />LLM call</span>
+                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-cyan-500" />Tool call</span>
+                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-slate-500" />Internal</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {spans.map((span) => {
+                      const attrs = parseJsonObject(span.attributes);
+                      const type = detectSpanType(span, attrs);
+                      const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
+                      const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
+                      const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
+                      const width = Math.max(1, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
+
+                      return (
+                        <button
+                          key={span.id}
+                          onClick={() => setSelectedSpanId(span.id)}
+                          className={`w-full rounded-md border p-2 text-left transition ${
+                            selectedSpanId === span.id
+                              ? 'border-indigo-500 bg-indigo-950/30'
+                              : 'border-slate-700 bg-slate-950/30 hover:border-slate-600'
+                          } ${span.status_code === 2 ? 'ring-1 ring-red-500/70' : ''}`}
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-2">
+                            <div
+                              className="truncate text-sm"
+                              style={{ paddingLeft: `${Math.min(span.depth * 14, 80)}px` }}
+                            >
+                              {span.name || 'unknown'}
+                            </div>
+                            <div className="text-xs text-slate-300">{formatDurationNs(span.duration_ns)}</div>
+                          </div>
+                          <div className="relative h-6 rounded bg-slate-800/60">
+                            <div
+                              className={`absolute top-1 h-4 rounded ${spanTypeColor(type)}`}
+                              style={{ left: `${left}%`, width: `${width}%` }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              <h2 className="mb-3 text-lg font-semibold">Span Detail</h2>
+              {!selectedSpan ? (
+                <p className="text-sm text-slate-400">Click a span in timeline to inspect details.</p>
+              ) : (
+                (() => {
+                  const attrs = parseJsonObject(selectedSpan.attributes);
+                  const resourceAttrs = parseJsonObject(selectedSpan.resource_attributes);
+                  const type = detectSpanType(selectedSpan, attrs);
+                  const inputTokens = attrs['gen_ai.usage.input_tokens'];
+                  const outputTokens = attrs['gen_ai.usage.output_tokens'];
+                  const toolInput = attrs['tool.input'] ?? attrs['tool.arguments'] ?? attrs['input'];
+                  const toolOutput = attrs['tool.output'] ?? attrs['output'];
+
+                  return (
+                    <div className="space-y-3 text-sm">
+                      {selectedSpan.status_code === 2 ? (
+                        <div className="rounded border border-red-700 bg-red-950/40 px-2 py-1 text-xs text-red-200">
+                          ERROR status span
+                        </div>
+                      ) : null}
+
+                      <div className="grid grid-cols-1 gap-1 font-mono text-xs text-slate-300">
+                        <div>name: {selectedSpan.name || 'unknown'}</div>
+                        <div>type: {type}</div>
+                        <div>traceId: {selectedSpan.trace_id}</div>
+                        <div>spanId: {selectedSpan.span_id || '-'}</div>
+                        <div>duration: {formatDurationNs(selectedSpan.duration_ns)}</div>
+                      </div>
+
+                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">
+                          Attributes
+                        </summary>
+                        <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(attrs, null, 2)}</pre>
+                      </details>
+
+                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">
+                          Resource Attributes
+                        </summary>
+                        <pre className="mt-2 overflow-auto text-xs text-slate-200">
+                          {JSON.stringify(resourceAttrs, null, 2)}
+                        </pre>
+                      </details>
+
+                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">
+                          Tool Input (foldable)
+                        </summary>
+                        <pre className="mt-2 overflow-auto text-xs text-slate-200">
+                          {toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}
+                        </pre>
+                      </details>
+
+                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">
+                          Tool Output (foldable)
+                        </summary>
+                        <pre className="mt-2 overflow-auto text-xs text-slate-200">
+                          {toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}
+                        </pre>
+                      </details>
+
+                      <div className="rounded border border-slate-700 bg-slate-950/40 p-2 text-xs">
+                        <div className="mb-1 font-semibold uppercase tracking-wide text-slate-300">LLM token usage</div>
+                        <div className="font-mono text-slate-200">input: {inputTokens ?? '-'}</div>
+                        <div className="font-mono text-slate-200">output: {outputTokens ?? '-'}</div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+            </aside>
           </section>
         </section>
       </div>

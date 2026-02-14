@@ -44,16 +44,16 @@
 - [x] 简单的时间范围筛选
 
 ### 2.2 Trace 详情页 — Timeline
-- [ ] 瀑布图（waterfall）：横轴为时间，每个 span 一行
-- [ ] 展示父子层级关系（缩进或嵌套）
-- [ ] 颜色区分 span 类型（LLM call / tool call / internal）
-- [ ] 点击 span 展开详情侧面板
+- [x] 瀑布图（waterfall）：横轴为时间，每个 span 一行
+- [x] 展示父子层级关系（缩进或嵌套）
+- [x] 颜色区分 span 类型（LLM call / tool call / internal）
+- [x] 点击 span 展开详情侧面板
 
 ### 2.3 Span 详情面板
-- [ ] 显示 span 完整信息：name, traceId, spanId, duration, attributes
-- [ ] Tool call 的输入/输出展开折叠
-- [ ] LLM call 的 token 用量（从 attributes 中提取 `gen_ai.usage.*`）
-- [ ] 错误状态高亮
+- [x] 显示 span 完整信息：name, traceId, spanId, duration, attributes
+- [x] Tool call 的输入/输出展开折叠
+- [x] LLM call 的 token 用量（从 attributes 中提取 `gen_ai.usage.*`）
+- [x] 错误状态高亮
 
 ---
 
