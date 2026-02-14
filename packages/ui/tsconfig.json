@@ -2,6 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "jsx": "react-jsx",
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
     "types": ["node"]
   },
   "include": ["src", "rsbuild.config.ts"]

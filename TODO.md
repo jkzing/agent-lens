@@ -38,10 +38,10 @@
 ## Phase 2: UI — Trace Timeline 视图
 
 ### 2.1 Trace 列表页
-- [ ] 左侧 trace 列表，显示：根 span 名称、span 数量、总耗时、时间戳
-- [ ] 点击进入 trace 详情
-- [ ] 自动刷新 / 手动刷新
-- [ ] 简单的时间范围筛选
+- [x] 左侧 trace 列表，显示：根 span 名称、span 数量、总耗时、时间戳
+- [x] 点击进入 trace 详情
+- [x] 自动刷新 / 手动刷新
+- [x] 简单的时间范围筛选
 
 ### 2.2 Trace 详情页 — Timeline
 - [ ] 瀑布图（waterfall）：横轴为时间，每个 span 一行

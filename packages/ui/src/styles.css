@@ -13,9 +13,9 @@ body {
 }
 
 .container {
-  max-width: 980px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 40px 20px;
+  padding: 28px 20px;
 }
 
 .header {
@@ -23,6 +23,7 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  margin-bottom: 14px;
 }
 
 h1 {
@@ -30,28 +31,69 @@ h1 {
   margin: 0;
 }
 
-p {
-  margin-top: 8px;
+h2 {
+  margin-top: 0;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.controls select,
+.refreshBtn {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid #3a478b;
+  background: #192148;
+  color: #e8ecff;
+  padding: 0 10px;
+}
+
+.inlineLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
 }
 
 .card {
-  margin-top: 20px;
-  padding: 18px;
-  border-radius: 14px;
+  padding: 16px;
+  border-radius: 12px;
   background: #1b2140;
   border: 1px solid #2a3364;
 }
 
-.list {
-  display: grid;
-  gap: 12px;
+.traceList {
+  max-height: calc(100vh - 160px);
+  overflow: auto;
 }
 
-.spanItem {
+.list {
+  display: grid;
+  gap: 10px;
+}
+
+.traceItem {
+  text-align: left;
   border: 1px solid #2f3a74;
   border-radius: 10px;
-  padding: 12px;
+  padding: 10px;
   background: rgba(7, 11, 28, 0.45);
+  color: inherit;
+  cursor: pointer;
+}
+
+.traceItem.active {
+  border-color: #6f84ff;
+  box-shadow: inset 0 0 0 1px #6f84ff;
 }
 
 .row {
@@ -59,7 +101,21 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.pill {
+  font-size: 11px;
+  background: #334196;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.spanItem {
+  border: 1px solid #2f3a74;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(7, 11, 28, 0.45);
 }
 
 .meta {
@@ -72,15 +128,21 @@ p {
   color: #aeb9ff;
 }
 
-.error {
-  color: #ff8a8a;
+.errorBox {
+  margin-bottom: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  color: #ffd1d1;
+  border: 1px solid #7d2c2c;
+  background: #3d1b1b;
 }
 
-.refreshBtn {
-  background: #4f6dff;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .traceList {
+    max-height: none;
+  }
 }
