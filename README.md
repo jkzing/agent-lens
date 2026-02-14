@@ -59,6 +59,12 @@ npx agent-lens --port 4318
 
 然后重启 OpenClaw，使 OTEL trace 导入 agent-lens。
 
+验证步骤：
+
+1. 启动 agent-lens：`pnpm dev -- --port 4318`
+2. 触发一轮 OpenClaw 对话（产生 spans）
+3. 打开 `http://localhost:4318`，确认 trace 列表和 timeline 正常展示
+
 ## Demo
 
 - UI 截图：`docs/demo.png`

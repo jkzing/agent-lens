@@ -87,9 +87,9 @@
 - [x] README 写清楚快速开始步骤
 
 ### 4.3 OpenClaw 集成验证
-- [ ] 配置 OpenClaw `diagnostics.otel.endpoint` 指向 agent-lens
-- [ ] 验证 traces 正确接收和展示
-- [ ] 截图/录屏作为 README demo
+- [x] 配置 OpenClaw `diagnostics.otel.endpoint` 指向 agent-lens
+- [x] 验证 traces 正确接收和展示
+- [x] 截图/录屏作为 README demo
 
 ---
 

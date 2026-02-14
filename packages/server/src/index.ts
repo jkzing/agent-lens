@@ -463,6 +463,7 @@ app.get('/api/traces/:traceId', (c) => {
 });
 
 if (hasUiDist) {
+  app.use('/static/*', serveStatic({ root: uiDistPath }));
   app.use('/assets/*', serveStatic({ root: uiDistPath }));
   app.get('*', serveStatic({ path: path.join(uiDistPath, 'index.html') }));
 }
