@@ -77,10 +77,10 @@
 ## Phase 4: CLI & 发布
 
 ### 4.1 CLI 完善
-- [ ] `agent-lens` 命令启动时先 build UI（或使用预构建产物），再启动 server 静态服务 UI
-- [ ] 支持 `--port` 参数
-- [ ] 启动后自动打开浏览器
-- [ ] 优雅关闭（cleanup SQLite connection）
+- [x] `agent-lens` 命令启动时先 build UI（或使用预构建产物），再启动 server 静态服务 UI
+- [x] 支持 `--port` 参数
+- [x] 启动后自动打开浏览器
+- [x] 优雅关闭（cleanup SQLite connection）
 
 ### 4.2 `npx agent-lens` 零配置体验
 - [ ] 确保 `npx agent-lens` 直接可用（package.json bin 配置）

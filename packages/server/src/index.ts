@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
 import { Hono, type Context } from 'hono';
 import Database from 'better-sqlite3';
@@ -28,6 +29,9 @@ fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = path.join(dataDir, 'agent-lens.db');
 const db = new Database(dbPath);
+
+const uiDistPath = path.resolve(process.env.UI_DIST ?? path.join(process.cwd(), '../ui/dist'));
+const hasUiDist = fs.existsSync(path.join(uiDistPath, 'index.html'));
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS spans (
@@ -458,9 +462,28 @@ app.get('/api/traces/:traceId', (c) => {
   });
 });
 
+if (hasUiDist) {
+  app.use('/assets/*', serveStatic({ root: uiDistPath }));
+  app.get('*', serveStatic({ path: path.join(uiDistPath, 'index.html') }));
+}
+
 const port = Number(process.env.PORT || 4318);
 
-serve({ fetch: app.fetch, port }, () => {
+const server = serve({ fetch: app.fetch, port }, () => {
   console.log(`[agent-lens/server] listening on http://localhost:${port}`);
   console.log(`[agent-lens/server] sqlite: ${dbPath}`);
+  if (hasUiDist) {
+    console.log(`[agent-lens/server] serving ui: ${uiDistPath}`);
+  }
 });
+
+const shutdown = (signal: string) => {
+  console.log(`[agent-lens/server] received ${signal}, shutting down...`);
+  db.close();
+  server.close(() => {
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
