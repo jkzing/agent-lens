@@ -661,7 +661,9 @@ export default function App() {
                         return (
                           <div key={`${tickNs}-${idx}`} className="absolute inset-y-0" style={{ left: `${leftPct}%` }}>
                             <div className="h-full w-px bg-border" />
-                            <div className="-translate-x-1/2 pt-0.5 text-[10px] text-muted-foreground">{formatTick(tickNs)}</div>
+                            <div className="absolute left-0 top-full -translate-x-1/2 pt-0.5 text-[10px] text-muted-foreground whitespace-nowrap">
+                              {formatTick(tickNs)}
+                            </div>
                           </div>
                         );
                       })}
