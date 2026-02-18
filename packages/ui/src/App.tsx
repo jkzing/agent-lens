@@ -3,6 +3,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -159,9 +161,9 @@ function detectSpanType(span: SpanRow, attrs: Record<string, any>): SpanKindType
 }
 
 function spanTypeColor(type: SpanKindType): string {
-  if (type === 'llm') return 'bg-violet-500/80';
-  if (type === 'tool') return 'bg-cyan-500/80';
-  return 'bg-slate-500/80';
+  if (type === 'llm') return 'bg-span-llm/80';
+  if (type === 'tool') return 'bg-span-tool/80';
+  return 'bg-span-internal/80';
 }
 
 function toNumber(value: unknown): number {
@@ -498,16 +500,16 @@ export default function App() {
 
   return (
     <TooltipProvider>
-      <main className="min-h-screen bg-slate-950 text-slate-100">
+      <main className="min-h-screen bg-background text-foreground">
         <div className="mx-auto max-w-7xl px-5 py-7">
           <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-3xl font-semibold">agent-lens</h1>
-              <p className="mt-1 text-sm text-slate-300">Trace timeline explorer</p>
+              <p className="mt-1 text-sm text-muted-foreground">Trace timeline explorer</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                 value={range}
                 onChange={(e) => setRange(e.target.value as 'all' | '15m' | '1h' | '24h')}
               >
@@ -517,7 +519,7 @@ export default function App() {
                 <option value="24h">Last 24h</option>
               </select>
               <select
-                className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
+                className="h-9 rounded-md border border-border bg-background px-2 text-sm"
                 value={agentFilter}
                 onChange={(e) => setAgentFilter(e.target.value)}
               >
@@ -528,7 +530,7 @@ export default function App() {
                   </option>
                 ))}
               </select>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-300">
+              <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                 <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
                 Auto refresh
               </label>
@@ -536,19 +538,19 @@ export default function App() {
             </div>
           </header>
 
-          {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+          {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+            <aside className="rounded-xl border border-border bg-card p-4">
               <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
               <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
-              {loading ? <p className="text-sm text-slate-400">Loading traces...</p> : null}
+              {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
 
               <ScrollArea className="h-[calc(100vh-250px)] pr-2">
                 <div className="space-y-3">
                   {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
                     <div key={agent}>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{agent}</div>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{agent}</div>
                       <div className="space-y-2">
                         {agentTraces.map((trace) => {
                           const inputTokens = toNumber(trace.input_tokens);
@@ -560,18 +562,18 @@ export default function App() {
                               className={cn(
                                 'w-full rounded-lg border p-3 text-left transition',
                                 trace.trace_id === selectedTraceId
-                                  ? 'border-indigo-500 bg-indigo-900/30'
-                                  : 'border-slate-700 bg-slate-950/40 hover:border-slate-600'
+                                  ? 'border-primary bg-primary/10'
+                                  : 'border-border bg-background/40 hover:border-ring/60'
                               )}
                               onClick={() => setSelectedTraceId(trace.trace_id)}
                             >
                               <div className="mb-1 flex items-center justify-between gap-2">
                                 <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
-                                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200">{trace.span_count} spans</span>
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground">{trace.span_count} spans</span>
                               </div>
-                              <div className="font-mono text-xs text-slate-300">duration: {formatDurationNs(trace.duration_ns)}</div>
-                              <div className="font-mono text-xs text-slate-300">tokens: in {inputTokens} / out {outputTokens}</div>
-                              <div className="font-mono text-xs text-slate-400">time: {new Date(trace.last_received_at).toLocaleString()}</div>
+                              <div className="font-mono text-xs text-muted-foreground">duration: {formatDurationNs(trace.duration_ns)}</div>
+                              <div className="font-mono text-xs text-muted-foreground">tokens: in {inputTokens} / out {outputTokens}</div>
+                              <div className="font-mono text-xs text-muted-foreground">time: {new Date(trace.last_received_at).toLocaleString()}</div>
                             </button>
                           );
                         })}
@@ -583,7 +585,7 @@ export default function App() {
             </aside>
 
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              <div className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold">Trace Timeline</h2>
                   {selectedTrace ? (
@@ -598,60 +600,74 @@ export default function App() {
                   ) : null}
                 </div>
                 {!selectedTrace ? (
-                  <p className="text-sm text-slate-400">Select a trace from the left list.</p>
+                  <p className="text-sm text-muted-foreground">Select a trace from the left list.</p>
                 ) : (
                   <>
-                    <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs text-slate-300">
+                    <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs text-muted-foreground">
                       <div>traceId: {selectedTrace.trace_id}</div>
                       <div>root: {selectedTrace.root_span_name}</div>
                       <div>duration: {formatDurationNs(selectedTrace.duration_ns)}</div>
                       <div>span count: {selectedTrace.span_count}</div>
                       <div>input tokens: {traceCostStats.input}</div>
                       <div>output tokens: {traceCostStats.output}</div>
-                      <div className="col-span-2 text-emerald-300">estimated cost: ${traceCostStats.cost.toFixed(6)}</div>
+                      <div className="col-span-2 text-emerald-600 dark:text-emerald-400">estimated cost: ${traceCostStats.cost.toFixed(6)}</div>
                     </div>
 
                     {traceCostStats.modelRows.length > 0 ? (
-                      <div className="mb-3 rounded border border-slate-800 bg-slate-950/50 p-2">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-300">Per-model cost breakdown</div>
-                        <div className="space-y-1">
-                          {traceCostStats.modelRows.map((row) => (
-                            <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_110px_110px_120px] gap-2 text-xs font-mono">
-                              <div className="truncate text-slate-200">{row.provider}/{row.model}</div>
-                              <div className="text-slate-300">in {row.inputTokens}</div>
-                              <div className="text-slate-300">out {row.outputTokens}</div>
-                              <div className="text-emerald-300">${row.cost.toFixed(6)}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                      <Card className="mb-3">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">Per-model cost breakdown</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Model</TableHead>
+                                <TableHead>Input</TableHead>
+                                <TableHead>Output</TableHead>
+                                <TableHead className="text-right">Cost</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {traceCostStats.modelRows.map((row) => (
+                                <TableRow key={row.key}>
+                                  <TableCell className="font-mono text-xs">{row.provider}/{row.model}</TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">{row.inputTokens}</TableCell>
+                                  <TableCell className="font-mono text-xs text-muted-foreground">{row.outputTokens}</TableCell>
+                                  <TableCell className="text-right font-mono text-xs text-emerald-600 dark:text-emerald-400">${row.cost.toFixed(6)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
                     ) : null}
 
                     {suspiciousLoopSpanIds.size > 0 ? (
-                      <div className="mb-3 rounded border border-amber-600 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
+                      <div className="mb-3 rounded border border-amber-600 bg-amber-500/10 px-2 py-1 text-xs text-amber-600 dark:text-amber-400">
                         ⚠ possible tool loop detected ({suspiciousLoopSpanIds.size} spans in repeated tool patterns)
                       </div>
                     ) : null}
 
-                    <div className="mb-3 flex items-center gap-3 text-xs text-slate-300">
-                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-violet-500" />LLM call</span>
-                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-cyan-500" />Tool call</span>
-                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-slate-500" />Internal</span>
+                    <div className="mb-3 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-llm" />LLM call</span>
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-tool" />Tool call</span>
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-internal" />Internal</span>
                     </div>
 
-                    <div className="mb-2 relative h-8 rounded border border-slate-800 bg-slate-950/50">
+                    <div className="mb-2 relative h-8 rounded border border-border bg-background/50">
                       {ticks.map((tickNs, idx) => {
                         const leftPct = (tickNs / timelineMeta.total) * 100;
                         return (
                           <div key={`${tickNs}-${idx}`} className="absolute inset-y-0" style={{ left: `${leftPct}%` }}>
-                            <div className="h-full w-px bg-slate-700" />
-                            <div className="-translate-x-1/2 pt-0.5 text-[10px] text-slate-400">{formatTick(tickNs)}</div>
+                            <div className="h-full w-px bg-border" />
+                            <div className="-translate-x-1/2 pt-0.5 text-[10px] text-muted-foreground">{formatTick(tickNs)}</div>
                           </div>
                         );
                       })}
                     </div>
 
-                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-slate-800 bg-slate-950/30 p-2">
+                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30 p-2">
                       <div className="min-w-[760px] space-y-2">
                         {spans.map((span) => {
                           const attrs = parseJsonObject(span.attributes);
@@ -669,31 +685,31 @@ export default function App() {
                               className={cn(
                                 'w-full rounded-md border p-2 text-left transition',
                                 selectedSpanId === span.id
-                                  ? 'border-indigo-500 bg-indigo-950/30'
-                                  : 'border-slate-700 bg-slate-950/30 hover:border-slate-600',
+                                  ? 'border-primary bg-primary/10'
+                                  : 'border-border bg-background/30 hover:border-ring/60',
                                 span.status_code === 2 && 'ring-1 ring-red-500/70'
                               )}
                             >
                               <div className="grid grid-cols-[280px_minmax(0,1fr)] items-center gap-3">
                                 <div className="relative h-7">
                                   {guideLevels.map((level) => (
-                                    <span key={level} className="absolute top-0 h-full w-px bg-slate-700/90" style={{ left: `${12 + level * 14}px` }} />
+                                    <span key={level} className="absolute top-0 h-full w-px bg-border/90" style={{ left: `${12 + level * 14}px` }} />
                                   ))}
                                   {span.depth > 0 ? (
-                                    <span className="absolute top-1/2 h-px bg-slate-700/90" style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }} />
+                                    <span className="absolute top-1/2 h-px bg-border/90" style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }} />
                                   ) : null}
                                   <div className="absolute top-1/2 right-0 -translate-y-1/2 truncate text-sm" style={{ left: `${18 + span.depth * 14}px` }}>
                                     {span.name || 'unknown'}
                                     {suspiciousLoopSpanIds.has(span.id) ? (
-                                      <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">loop?</span>
+                                      <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">loop?</span>
                                     ) : null}
                                   </div>
                                 </div>
 
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className="relative h-7 rounded bg-slate-800/60">
-                                      <div className="absolute inset-y-0 border-r border-slate-600/40" style={{ left: `${left}%` }} />
+                                    <div className="relative h-7 rounded bg-muted/60">
+                                      <div className="absolute inset-y-0 border-r border-border/50" style={{ left: `${left}%` }} />
                                       <div className={`absolute top-1 h-5 rounded ${spanTypeColor(type)}`} style={{ left: `${left}%`, width: `${width}%` }} />
                                     </div>
                                   </TooltipTrigger>
@@ -715,10 +731,10 @@ export default function App() {
                 )}
               </div>
 
-              <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+              <aside className="rounded-xl border border-border bg-card p-4">
                 <h2 className="mb-3 text-lg font-semibold">Span Detail</h2>
                 {!selectedSpan ? (
-                  <p className="text-sm text-slate-400">Click a span in timeline to inspect details.</p>
+                  <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
                 ) : (
                   (() => {
                     const attrs = parseJsonObject(selectedSpan.attributes);
@@ -733,10 +749,10 @@ export default function App() {
                     return (
                       <div className="space-y-3 text-sm">
                         {selectedSpan.status_code === 2 ? (
-                          <div className="rounded border border-red-700 bg-red-950/40 px-2 py-1 text-xs text-red-200">ERROR status span</div>
+                          <div className="rounded border border-destructive/40 bg-destructive/15 px-2 py-1 text-xs text-destructive">ERROR status span</div>
                         ) : null}
 
-                        <div className="grid grid-cols-1 gap-1 font-mono text-xs text-slate-300">
+                        <div className="grid grid-cols-1 gap-1 font-mono text-xs text-muted-foreground">
                           <div>name: {selectedSpan.name || 'unknown'}</div>
                           <div>type: {type}</div>
                           <div>traceId: {selectedSpan.trace_id}</div>
@@ -745,54 +761,54 @@ export default function App() {
                         </div>
 
                         {selectedSpanContextRows.length > 0 ? (
-                          <div className="rounded border border-sky-700/40 bg-sky-950/20 p-2 text-xs">
-                            <div className="mb-1 font-semibold uppercase tracking-wide text-sky-300">Context</div>
+                          <div className="rounded border border-sky-700/40 bg-sky-500/10 p-2 text-xs">
+                            <div className="mb-1 font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400">Context</div>
                             <div className="space-y-1 font-mono">
                               {selectedSpanContextRows.map((row) => (
                                 <div key={row.label} className="flex gap-2">
-                                  <span className="text-slate-300">{row.label}:</span>
-                                  <span className="truncate text-slate-100">{row.value}</span>
+                                  <span className="text-muted-foreground">{row.label}:</span>
+                                  <span className="truncate text-foreground">{row.value}</span>
                                 </div>
                               ))}
                             </div>
                           </div>
                         ) : null}
 
-                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Attributes</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(attrs, null, 2)}</pre>
+                        <details className="rounded border border-border bg-background/40 p-2" open>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attributes</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-foreground">{JSON.stringify(attrs, null, 2)}</pre>
                         </details>
 
-                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Resource Attributes</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(resourceAttrs, null, 2)}</pre>
+                        <details className="rounded border border-border bg-background/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resource Attributes</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-foreground">{JSON.stringify(resourceAttrs, null, 2)}</pre>
                         </details>
 
-                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Input (foldable)</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}</pre>
+                        <details className="rounded border border-border bg-background/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tool Input (foldable)</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-foreground">{toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}</pre>
                         </details>
 
-                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Output (foldable)</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}</pre>
+                        <details className="rounded border border-border bg-background/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tool Output (foldable)</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-foreground">{toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}</pre>
                         </details>
 
-                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Events ({selectedSpanEvents.length})</summary>
+                        <details className="rounded border border-border bg-background/40 p-2" open>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Events ({selectedSpanEvents.length})</summary>
                           {selectedSpanEvents.length === 0 ? (
-                            <div className="mt-2 text-xs text-slate-400">(none)</div>
+                            <div className="mt-2 text-xs text-muted-foreground">(none)</div>
                           ) : (
                             <div className="mt-2 space-y-2">
                               {selectedSpanEvents.map((event, idx) => {
                                 const offset = spanStart != null && event.timeUnixNano != null ? event.timeUnixNano - spanStart : null;
                                 return (
-                                  <div key={`${event.name}-${idx}`} className="rounded border border-slate-700/70 p-2">
+                                  <div key={`${event.name}-${idx}`} className="rounded border border-border/70 p-2">
                                     <div className="mb-1 flex items-center justify-between gap-2">
-                                      <div className="font-mono text-xs text-slate-200">{offset == null ? 'offset: -' : `offset: ${formatOffsetMs(offset)}`}</div>
+                                      <div className="font-mono text-xs text-foreground">{offset == null ? 'offset: -' : `offset: ${formatOffsetMs(offset)}`}</div>
                                       <Badge variant={eventVariant(event.name)}>{event.name}</Badge>
                                     </div>
-                                    <pre className="overflow-auto text-xs text-slate-300">{JSON.stringify(event.attributes, null, 2)}</pre>
+                                    <pre className="overflow-auto text-xs text-muted-foreground">{JSON.stringify(event.attributes, null, 2)}</pre>
                                   </div>
                                 );
                               })}
@@ -800,10 +816,10 @@ export default function App() {
                           )}
                         </details>
 
-                        <div className="rounded border border-slate-700 bg-slate-950/40 p-2 text-xs">
-                          <div className="mb-1 font-semibold uppercase tracking-wide text-slate-300">LLM token usage</div>
-                          <div className="font-mono text-slate-200">input: {inputTokens ?? '-'}</div>
-                          <div className="font-mono text-slate-200">output: {outputTokens ?? '-'}</div>
+                        <div className="rounded border border-border bg-background/40 p-2 text-xs">
+                          <div className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">LLM token usage</div>
+                          <div className="font-mono text-foreground">input: {inputTokens ?? '-'}</div>
+                          <div className="font-mono text-foreground">output: {outputTokens ?? '-'}</div>
                         </div>
                       </div>
                     );
