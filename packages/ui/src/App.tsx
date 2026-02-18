@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { AlertTriangle, Bot, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Reply, Send, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type TraceSummary = {
@@ -227,6 +227,30 @@ function eventVariant(name: string): 'default' | 'outline' {
   return 'outline';
 }
 
+function statusBadgeVariant(status: 'success' | 'running' | 'error' | 'waiting'): 'success' | 'warning' | 'destructive' | 'outline' {
+  if (status === 'success') return 'success';
+  if (status === 'running') return 'warning';
+  if (status === 'error') return 'destructive';
+  return 'outline';
+}
+
+function detectActor(name: string): 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System' {
+  const n = (name || '').toLowerCase();
+  if (n.includes('human') || n.includes('user') || n.includes('kai')) return 'Human';
+  if (n.includes('lumi')) return 'Lumi';
+  if (n.includes('nyx')) return 'Nyx';
+  if (n.includes('runa')) return 'Runa';
+  return 'System';
+}
+
+function stepIcon(type: string, status: string) {
+  if (status === 'error') return AlertTriangle;
+  if (type.toLowerCase().includes('tool')) return Wrench;
+  if (type.toLowerCase().includes('llm')) return Bot;
+  if (type.toLowerCase().includes('reply')) return Reply;
+  return Send;
+}
+
 function normalizeValue(value: unknown): string {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
@@ -333,6 +357,9 @@ export default function App() {
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [selectedOverviewStepId, setSelectedOverviewStepId] = useState<number | null>(null);
   const [overviewShowRaw, setOverviewShowRaw] = useState(false);
+  const [overviewHoverStepId, setOverviewHoverStepId] = useState<number | null>(null);
+  const [overviewActorFilter, setOverviewActorFilter] = useState<'all' | 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System'>('all');
+  const [overviewTimeFilter, setOverviewTimeFilter] = useState<'all' | '5m' | '1h' | '24h'>('all');
 
   const loadTraces = useCallback(async () => {
     const res = await fetch('/api/traces?limit=200&offset=0');
@@ -528,9 +555,11 @@ export default function App() {
       const attrs = parseJsonObject(span.attributes);
       const parent = span.parent_span_id ? spanById.get(span.parent_span_id) : null;
       const spanType = detectSpanType(span, attrs);
-      const status = span.status_code === 2 ? 'error' : span.end_time_unix_nano ? 'success' : 'running';
+      const status: 'success' | 'running' | 'error' | 'waiting' = span.status_code === 2 ? 'error' : span.end_time_unix_nano ? 'success' : (span.parent_span_id ? 'waiting' : 'running');
       const fromActor = parent?.name || 'system';
       const toActor = span.name || 'unknown';
+      const fromLane = detectActor(fromActor);
+      const toLane = detectActor(toActor);
       const inputSummary = summarize(attrs, ['tool.input', 'tool.arguments', 'input', 'gen_ai.content.prompt', 'prompt']);
       const outputSummary = summarize(attrs, ['tool.output', 'output', 'gen_ai.content.completion', 'completion']);
       const inputTokens = toNumber(attrs['gen_ai.usage.input_tokens']);
@@ -544,9 +573,12 @@ export default function App() {
         index: index + 1,
         fromActor,
         toActor,
+        fromLane,
+        toLane,
         actionType,
         status,
         duration: formatDurationNs(span.duration_ns),
+        durationNs: span.duration_ns ?? 0,
         inputSummary,
         outputSummary,
         inputTokens,
@@ -555,22 +587,54 @@ export default function App() {
         attrs,
         modelInfo,
         errorMessage: span.status_code === 2 ? (attrs['error.message'] || attrs['exception.message'] || 'Span failed') : null,
-        startedAt: span.start_time_unix_nano ? Number(span.start_time_unix_nano) : 0
+        startedAt: span.start_time_unix_nano ? Number(span.start_time_unix_nano) : 0,
+        timestamp: span.received_at
       };
     }).sort((a, b) => a.startedAt - b.startedAt || a.id - b.id);
   }, [spans, spanById]);
 
-  const selectedOverviewStep = overviewSteps.find((s) => s.id === selectedOverviewStepId) || overviewSteps[0] || null;
+  const filteredOverviewSteps = useMemo(() => {
+    return overviewSteps.filter((step) => {
+      if (overviewActorFilter !== 'all' && step.fromLane !== overviewActorFilter && step.toLane !== overviewActorFilter) return false;
+      if (overviewTimeFilter === 'all') return true;
+      const ageMs = Date.now() - new Date(step.timestamp).getTime();
+      if (overviewTimeFilter === '5m') return ageMs <= 5 * 60 * 1000;
+      if (overviewTimeFilter === '1h') return ageMs <= 60 * 60 * 1000;
+      if (overviewTimeFilter === '24h') return ageMs <= 24 * 60 * 60 * 1000;
+      return true;
+    });
+  }, [overviewSteps, overviewActorFilter, overviewTimeFilter]);
+
+  const selectedOverviewStep = filteredOverviewSteps.find((s) => s.id === selectedOverviewStepId) || filteredOverviewSteps[0] || null;
+
+  const overviewKpis = useMemo(() => {
+    const total = filteredOverviewSteps.length;
+    const success = filteredOverviewSteps.filter((s) => s.status === 'success').length;
+    const blocked = filteredOverviewSteps.filter((s) => s.status === 'waiting' || s.status === 'running').length;
+    const avgDurationNs = total > 0 ? filteredOverviewSteps.reduce((sum, s) => sum + s.durationNs, 0) / total : 0;
+    return {
+      total,
+      successRate: total > 0 ? (success / total) * 100 : 0,
+      avgDuration: formatDurationNs(avgDurationNs || 0),
+      blocked
+    };
+  }, [filteredOverviewSteps]);
 
   useEffect(() => {
-    if (overviewSteps.length === 0) {
+    if (filteredOverviewSteps.length === 0) {
       setSelectedOverviewStepId(null);
       return;
     }
-    if (!selectedOverviewStepId || !overviewSteps.some((s) => s.id === selectedOverviewStepId)) {
-      setSelectedOverviewStepId(overviewSteps[0].id);
+    if (!selectedOverviewStepId || !filteredOverviewSteps.some((s) => s.id === selectedOverviewStepId)) {
+      setSelectedOverviewStepId(filteredOverviewSteps[0].id);
     }
-  }, [overviewSteps, selectedOverviewStepId]);
+  }, [filteredOverviewSteps, selectedOverviewStepId]);
+
+  const laneOrder = ['Human', 'Lumi', 'Nyx', 'Runa', 'System'] as const;
+  const laneIndex = (lane: string) => {
+    const idx = laneOrder.indexOf(lane as (typeof laneOrder)[number]);
+    return idx >= 0 ? idx : laneOrder.length - 1;
+  };
 
   return (
     <TooltipProvider>
@@ -620,96 +684,178 @@ export default function App() {
               <TabsTrigger value="debug">Debug</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="overview" className="mt-0">
+            <TabsContent value="overview" className="mt-0 space-y-4">
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Interaction Timeline</CardTitle>
-                </CardHeader>
-                <CardContent className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                  <ScrollArea className="h-[calc(100vh-260px)] rounded border border-border bg-background/30 p-2">
-                    <div className="space-y-2">
-                      {overviewSteps.length === 0 ? (
-                        <div className="rounded border border-border bg-background/40 p-3 text-sm text-muted-foreground">No steps yet for this trace.</div>
-                      ) : (
-                        overviewSteps.map((step) => (
-                          <button
-                            key={step.id}
-                            onClick={() => setSelectedOverviewStepId(step.id)}
-                            className={cn(
-                              'w-full rounded-lg border p-3 text-left transition',
-                              selectedOverviewStep?.id === step.id
-                                ? 'border-primary bg-primary/10'
-                                : 'border-border bg-background/40 hover:border-ring/60'
-                            )}
-                          >
-                            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                              <div className="font-semibold">Step {step.index} · {step.fromActor} → {step.toActor}</div>
-                              <Badge variant={step.status === 'error' ? 'destructive' : step.status === 'running' ? 'warning' : 'success'}>
-                                {step.status}
-                              </Badge>
-                            </div>
-                            <div className="mb-1 text-xs text-muted-foreground">{step.actionType} · {step.duration}</div>
-                            <div className="text-sm"><span className="font-medium">Input:</span> {step.inputSummary}</div>
-                            <div className="text-sm"><span className="font-medium">Output:</span> {step.outputSummary}</div>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </ScrollArea>
-
-                  <Card className="h-fit">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-base">Step Detail</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-sm">
-                      {!selectedOverviewStep ? (
-                        <p className="text-muted-foreground">Select a step to inspect details.</p>
-                      ) : (
-                        <>
-                          <div className="grid grid-cols-1 gap-1 text-xs font-mono text-muted-foreground">
-                            <div>actor: {selectedOverviewStep.fromActor} → {selectedOverviewStep.toActor}</div>
-                            <div>type: {selectedOverviewStep.actionType}</div>
-                            <div>status: {selectedOverviewStep.status}</div>
-                            <div>duration: {selectedOverviewStep.duration}</div>
-                            {(selectedOverviewStep.inputTokens > 0 || selectedOverviewStep.outputTokens > 0) ? (
-                              <>
-                                <div>tokens: in {selectedOverviewStep.inputTokens} / out {selectedOverviewStep.outputTokens}</div>
-                                <div className="text-emerald-600 dark:text-emerald-400">cost: ${selectedOverviewStep.cost.toFixed(6)}</div>
-                              </>
-                            ) : null}
-                          </div>
-
-                          <div className="rounded border border-border bg-background/40 p-2">
-                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Input Summary</div>
-                            <div>{selectedOverviewStep.inputSummary}</div>
-                          </div>
-                          <div className="rounded border border-border bg-background/40 p-2">
-                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Output Summary</div>
-                            <div>{selectedOverviewStep.outputSummary}</div>
-                          </div>
-
-                          {selectedOverviewStep.errorMessage ? (
-                            <div className="rounded border border-destructive/40 bg-destructive/15 p-2 text-destructive">
-                              {selectedOverviewStep.errorMessage}
-                            </div>
-                          ) : null}
-
-                          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                            <input type="checkbox" checked={overviewShowRaw} onChange={(e) => setOverviewShowRaw(e.target.checked)} />
-                            Show raw
-                          </label>
-
-                          {overviewShowRaw ? (
-                            <pre className="max-h-64 overflow-auto rounded border border-border bg-background/40 p-2 text-xs text-foreground">
-                              {JSON.stringify(selectedOverviewStep.attrs, null, 2)}
-                            </pre>
-                          ) : null}
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
+                <CardContent className="pt-6">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      value={overviewTimeFilter}
+                      onChange={(e) => setOverviewTimeFilter(e.target.value as 'all' | '5m' | '1h' | '24h')}
+                    >
+                      <option value="all">All time</option>
+                      <option value="5m">Last 5m</option>
+                      <option value="1h">Last 1h</option>
+                      <option value="24h">Last 24h</option>
+                    </select>
+                    <select
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      value={overviewActorFilter}
+                      onChange={(e) => setOverviewActorFilter(e.target.value as 'all' | 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System')}
+                    >
+                      <option value="all">All actors</option>
+                      <option value="Human">Human</option>
+                      <option value="Lumi">Lumi</option>
+                      <option value="Nyx">Nyx</option>
+                      <option value="Runa">Runa</option>
+                      <option value="System">System</option>
+                    </select>
+                  </div>
                 </CardContent>
               </Card>
+
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Total interactions</div><div className="text-2xl font-semibold">{overviewKpis.total}</div></CardContent></Card>
+                <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Success rate</div><div className="text-2xl font-semibold">{overviewKpis.successRate.toFixed(0)}%</div></CardContent></Card>
+                <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Avg duration</div><div className="text-2xl font-semibold">{overviewKpis.avgDuration}</div></CardContent></Card>
+                <Card><CardContent className="p-4"><div className="text-xs text-muted-foreground">Blocked now</div><div className="text-2xl font-semibold">{overviewKpis.blocked}</div></CardContent></Card>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Interaction Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ScrollArea className="h-[calc(100vh-360px)] rounded border border-border bg-background/30 [&_[data-radix-scroll-area-viewport]]:overflow-x-auto [&_[data-radix-scroll-area-viewport]]:overflow-y-auto">
+                      <div className="min-w-[900px] p-3">
+                        <div className="grid grid-cols-5 gap-2">
+                          {laneOrder.map((lane) => (
+                            <div key={lane} className="rounded-md border border-border bg-background/60 px-2 py-1 text-center text-xs font-semibold text-muted-foreground">{lane}</div>
+                          ))}
+                        </div>
+
+                        {filteredOverviewSteps.length === 0 ? (
+                          <div className="mt-4 rounded border border-border bg-background/40 p-3 text-sm text-muted-foreground">No interaction steps under current filters.</div>
+                        ) : (
+                          <div className="relative mt-3" style={{ height: `${filteredOverviewSteps.length * 86 + 24}px` }}>
+                            <svg className="pointer-events-none absolute inset-0" width="100%" height="100%">
+                              <defs>
+                                <marker id="arrow-head" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+                                  <path d="M0,0 L0,6 L6,3 z" fill="currentColor" />
+                                </marker>
+                              </defs>
+                              {filteredOverviewSteps.map((step, idx) => {
+                                if (idx === 0) return null;
+                                const prev = filteredOverviewSteps[idx - 1];
+                                const x1 = ((laneIndex(prev.toLane) + 0.5) / laneOrder.length) * 100;
+                                const x2 = ((laneIndex(step.toLane) + 0.5) / laneOrder.length) * 100;
+                                const y1 = idx * 86 - 30;
+                                const y2 = idx * 86 + 8;
+                                const highlighted = overviewHoverStepId === step.id || overviewHoverStepId === prev.id;
+                                return (
+                                  <line
+                                    key={`link-${prev.id}-${step.id}`}
+                                    x1={`${x1}%`}
+                                    y1={y1}
+                                    x2={`${x2}%`}
+                                    y2={y2}
+                                    stroke={highlighted ? 'hsl(var(--primary))' : 'hsl(var(--border))'}
+                                    strokeWidth={highlighted ? 2 : 1}
+                                    markerEnd="url(#arrow-head)"
+                                    className="transition-all duration-150"
+                                  />
+                                );
+                              })}
+                            </svg>
+
+                            {filteredOverviewSteps.map((step, idx) => {
+                              const Icon = stepIcon(step.actionType, step.status);
+                              const lane = laneIndex(step.toLane);
+                              const leftPct = ((lane + 0.5) / laneOrder.length) * 100;
+                              const isFocus = overviewHoverStepId === step.id || selectedOverviewStep?.id === step.id;
+                              return (
+                                <button
+                                  key={step.id}
+                                  onMouseEnter={() => setOverviewHoverStepId(step.id)}
+                                  onMouseLeave={() => setOverviewHoverStepId(null)}
+                                  onClick={() => setSelectedOverviewStepId(step.id)}
+                                  className={cn(
+                                    'absolute -translate-x-1/2 rounded-md border bg-card px-3 py-2 text-left shadow-sm transition-all duration-150',
+                                    isFocus ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:border-ring/60'
+                                  )}
+                                  style={{ left: `${leftPct}%`, top: `${idx * 86}px`, width: '220px' }}
+                                >
+                                  <div className="mb-1 flex items-center justify-between gap-2">
+                                    <span className="inline-flex items-center gap-1 text-xs font-medium"><Icon className="h-3.5 w-3.5" /> {step.fromLane} → {step.toLane}</span>
+                                    <Badge variant={statusBadgeVariant(step.status)}>{step.status}</Badge>
+                                  </div>
+                                  <div className="truncate text-xs text-muted-foreground">{step.actionType}</div>
+                                  <div className="truncate text-sm">{step.inputSummary} → {step.outputSummary}</div>
+                                  <div className="mt-1 text-[11px] text-muted-foreground">{step.duration}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </ScrollArea>
+                  </CardContent>
+                </Card>
+
+                <Card className="xl:sticky xl:top-4 h-fit">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Step Detail</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-sm">
+                    {!selectedOverviewStep ? (
+                      <p className="text-muted-foreground">Select a step to inspect details.</p>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 gap-1 text-xs font-mono text-muted-foreground">
+                          <div>from/to: {selectedOverviewStep.fromLane} → {selectedOverviewStep.toLane}</div>
+                          <div>type: {selectedOverviewStep.actionType}</div>
+                          <div>status: {selectedOverviewStep.status}</div>
+                          <div>duration: {selectedOverviewStep.duration}</div>
+                          <div>timestamp: {new Date(selectedOverviewStep.timestamp).toLocaleString()}</div>
+                          {(selectedOverviewStep.inputTokens > 0 || selectedOverviewStep.outputTokens > 0) ? (
+                            <>
+                              <div>tokens: in {selectedOverviewStep.inputTokens} / out {selectedOverviewStep.outputTokens}</div>
+                              <div className="text-emerald-600 dark:text-emerald-400">cost: ${selectedOverviewStep.cost.toFixed(6)}</div>
+                            </>
+                          ) : null}
+                        </div>
+
+                        <div className="rounded border border-border bg-background/40 p-2">
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Input Summary</div>
+                          <div>{selectedOverviewStep.inputSummary}</div>
+                        </div>
+                        <div className="rounded border border-border bg-background/40 p-2">
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Output Summary</div>
+                          <div>{selectedOverviewStep.outputSummary}</div>
+                        </div>
+
+                        {selectedOverviewStep.errorMessage ? (
+                          <div className="rounded border border-destructive/40 bg-destructive/15 p-2 text-destructive">
+                            {selectedOverviewStep.errorMessage}
+                          </div>
+                        ) : null}
+
+                        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                          <input type="checkbox" checked={overviewShowRaw} onChange={(e) => setOverviewShowRaw(e.target.checked)} />
+                          Show raw
+                        </label>
+
+                        {overviewShowRaw ? (
+                          <pre className="max-h-64 overflow-auto rounded border border-border bg-background/40 p-2 text-xs text-foreground">
+                            {JSON.stringify(selectedOverviewStep.attrs, null, 2)}
+                          </pre>
+                        ) : null}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="debug" className="mt-0">
