@@ -36,7 +36,7 @@ type SpanRow = {
 
 type SpanKindType = 'llm' | 'tool' | 'internal';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || '';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://10.0.0.8:4318';
 const INPUT_TOKEN_PRICE = 0.000003;
 const OUTPUT_TOKEN_PRICE = 0.000015;
 

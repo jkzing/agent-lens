@@ -4,7 +4,11 @@
     "jsx": "react-jsx",
     "moduleResolution": "Bundler",
     "module": "ESNext",
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src", "rsbuild.config.ts"]
 }
