@@ -495,6 +495,7 @@ export default function App() {
   }, [spans]);
 
   const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
+  const timelineCanvasWidth = useMemo(() => Math.max(980, Math.min(2600, 720 + spans.length * 18)), [spans.length]);
   const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
   const selectedSpanContextRows = useMemo(() => (selectedSpan ? buildSpanContextRows(selectedSpan) : []), [selectedSpan]);
 
@@ -655,27 +656,28 @@ export default function App() {
                       <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-internal" />Internal</span>
                     </div>
 
-                    <div className="mb-2 relative h-8 overflow-hidden rounded border border-border bg-background/50">
-                      {ticks.map((tickNs, idx) => {
-                        const leftPct = (tickNs / timelineMeta.total) * 100;
-                        const labelTransform = leftPct < 6 ? 'translateX(0)' : leftPct > 94 ? 'translateX(-100%)' : 'translateX(-50%)';
-                        return (
-                          <div key={`${tickNs}-${idx}`}>
-                            <div className="absolute inset-y-0 w-px bg-border" style={{ left: `${leftPct}%` }} />
-                            <div
-                              className="absolute top-full pt-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
-                              style={{ left: `${leftPct}%`, transform: labelTransform }}
-                            >
-                              {formatTick(tickNs)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30">
+                      <div className="p-2" style={{ width: `${timelineCanvasWidth}px`, minWidth: '100%' }}>
+                        <div className="mb-2 relative h-8 overflow-hidden rounded border border-border bg-background/50">
+                          {ticks.map((tickNs, idx) => {
+                            const leftPct = (tickNs / timelineMeta.total) * 100;
+                            const labelTransform = leftPct < 6 ? 'translateX(0)' : leftPct > 94 ? 'translateX(-100%)' : 'translateX(-50%)';
+                            return (
+                              <div key={`${tickNs}-${idx}`}>
+                                <div className="absolute inset-y-0 w-px bg-border" style={{ left: `${leftPct}%` }} />
+                                <div
+                                  className="absolute top-full pt-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
+                                  style={{ left: `${leftPct}%`, transform: labelTransform }}
+                                >
+                                  {formatTick(tickNs)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
 
-                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30 p-2">
-                      <div className="min-w-[760px] space-y-2">
-                        {spans.map((span) => {
+                        <div className="space-y-2">
+                          {spans.map((span) => {
                           const attrs = parseJsonObject(span.attributes);
                           const type = detectSpanType(span, attrs);
                           const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
@@ -731,6 +733,7 @@ export default function App() {
                             </button>
                           );
                         })}
+                      </div>
                       </div>
                     </ScrollArea>
                   </>
