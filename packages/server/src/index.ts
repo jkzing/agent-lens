@@ -263,33 +263,46 @@ app.get('/api/traces', (c) => {
     )
     .all(limit, offset);
 
-  const enrichedItems = (items as Array<any>).map((item) => {
-    const spanRows = db
-      .prepare('SELECT attributes, resource_attributes FROM spans WHERE trace_id = ?')
-      .all(item.trace_id) as Array<{ attributes: string | null; resource_attributes: string | null }>;
+  const traceIds = (items as Array<any>).map((item) => item.trace_id).filter(Boolean);
+  const statsByTrace = new Map<string, { inputTokens: number; outputTokens: number; serviceNames: Set<string> }>();
 
-    let inputTokens = 0;
-    let outputTokens = 0;
-    const serviceNames = new Set<string>();
+  if (traceIds.length > 0) {
+    const placeholders = traceIds.map(() => '?').join(',');
+    const spanRows = db
+      .prepare(`SELECT trace_id, attributes, resource_attributes FROM spans WHERE trace_id IN (${placeholders})`)
+      .all(...traceIds) as Array<{ trace_id: string; attributes: string | null; resource_attributes: string | null }>;
 
     for (const row of spanRows) {
+      const bucket =
+        statsByTrace.get(row.trace_id) ??
+        (() => {
+          const init = { inputTokens: 0, outputTokens: 0, serviceNames: new Set<string>() };
+          statsByTrace.set(row.trace_id, init);
+          return init;
+        })();
+
       const attrs = parseJson(row.attributes);
-      inputTokens += toNumber(attrs['gen_ai.usage.input_tokens']);
-      outputTokens += toNumber(attrs['gen_ai.usage.output_tokens']);
+      bucket.inputTokens += toNumber(attrs['gen_ai.usage.input_tokens']);
+      bucket.outputTokens += toNumber(attrs['gen_ai.usage.output_tokens']);
 
       const resourceAttrs = parseJson(row.resource_attributes);
       const serviceName = resourceAttrs['service.name'];
       if (typeof serviceName === 'string' && serviceName.trim()) {
-        serviceNames.add(serviceName.trim());
+        bucket.serviceNames.add(serviceName.trim());
       }
     }
+  }
+
+  const enrichedItems = (items as Array<any>).map((item) => {
+    const stats = statsByTrace.get(item.trace_id);
+    const serviceNames = stats ? Array.from(stats.serviceNames) : [];
 
     return {
       ...item,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      service_names: Array.from(serviceNames),
-      primary_service_name: Array.from(serviceNames)[0] ?? 'unknown'
+      input_tokens: stats?.inputTokens ?? 0,
+      output_tokens: stats?.outputTokens ?? 0,
+      service_names: serviceNames,
+      primary_service_name: serviceNames[0] ?? 'unknown'
     };
   });
 

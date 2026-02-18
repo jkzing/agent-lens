@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -326,41 +326,50 @@ export default function App() {
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [traceSearch, setTraceSearch] = useState('');
 
-  const loadTraces = async (keepSelection = true) => {
+  const loadTraces = useCallback(async () => {
     const res = await fetch('/api/traces?limit=200&offset=0');
     if (!res.ok) throw new Error(`Load traces failed: ${res.status}`);
     const data = await res.json();
     const items = (Array.isArray(data.items) ? data.items : []) as TraceSummary[];
     setTraces(items);
+    return items;
+  }, []);
 
-    if (!keepSelection || !selectedTraceId) {
-      setSelectedTraceId(items[0]?.trace_id ?? null);
-      return;
-    }
-
-    const stillExists = items.some((t) => t.trace_id === selectedTraceId);
-    if (!stillExists) setSelectedTraceId(items[0]?.trace_id ?? null);
-  };
-
-  const loadTraceDetail = async (traceId: string) => {
+  const loadTraceDetail = useCallback(async (traceId: string) => {
     const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}?limit=500&offset=0`);
     if (!res.ok) throw new Error(`Load trace detail failed: ${res.status}`);
     const data = await res.json();
     const items = (Array.isArray(data.items) ? data.items : []) as SpanRow[];
     setSpans(items);
-    setSelectedSpanId(items[0]?.id ?? null);
-  };
+    setSelectedSpanId((prev) => (prev != null && items.some((item) => item.id === prev) ? prev : (items[0]?.id ?? null)));
+  }, []);
 
-  const refreshAll = async () => {
-    setError(null);
-    await loadTraces(true);
-  };
+  const refreshAll = useCallback(
+    async (traceIdToKeep: string | null) => {
+      setError(null);
+      const items = await loadTraces();
+
+      const nextTraceId = traceIdToKeep && items.some((t) => t.trace_id === traceIdToKeep)
+        ? traceIdToKeep
+        : (items[0]?.trace_id ?? null);
+
+      setSelectedTraceId(nextTraceId);
+
+      if (nextTraceId) {
+        await loadTraceDetail(nextTraceId);
+      } else {
+        setSpans([]);
+        setSelectedSpanId(null);
+      }
+    },
+    [loadTraceDetail, loadTraces]
+  );
 
   useEffect(() => {
-    refreshAll()
+    refreshAll(null)
       .catch((err: Error) => setError(err.message || 'Failed to load traces'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [refreshAll]);
 
   useEffect(() => {
     if (!selectedTraceId) {
@@ -375,10 +384,10 @@ export default function App() {
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = setInterval(() => {
-      refreshAll().catch(() => {});
+      refreshAll(selectedTraceId).catch(() => {});
     }, 5000);
     return () => clearInterval(timer);
-  }, [autoRefresh]);
+  }, [autoRefresh, refreshAll, selectedTraceId]);
 
   const agentOptions = useMemo(() => {
     const set = new Set<string>();
@@ -412,7 +421,22 @@ export default function App() {
     return groups;
   }, [filteredTraces]);
 
-  const selectedTrace = traces.find((t) => t.trace_id === selectedTraceId) || null;
+  useEffect(() => {
+    if (filteredTraces.length === 0) {
+      if (selectedTraceId !== null) {
+        setSelectedTraceId(null);
+        setSpans([]);
+        setSelectedSpanId(null);
+      }
+      return;
+    }
+
+    if (!selectedTraceId || !filteredTraces.some((t) => t.trace_id === selectedTraceId)) {
+      setSelectedTraceId(filteredTraces[0].trace_id);
+    }
+  }, [filteredTraces, selectedTraceId]);
+
+  const selectedTrace = filteredTraces.find((t) => t.trace_id === selectedTraceId) || null;
   const selectedSpan = spans.find((s) => s.id === selectedSpanId) || null;
   const suspiciousLoopSpanIds = useMemo(() => detectLoopPattern(spans), [spans]);
 
@@ -508,7 +532,7 @@ export default function App() {
                 <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
                 Auto refresh
               </label>
-              <Button onClick={() => refreshAll()}>Refresh</Button>
+              <Button onClick={() => refreshAll(selectedTraceId).catch((err) => setError(err.message || 'Refresh failed'))}>Refresh</Button>
             </div>
           </header>
 
@@ -529,7 +553,6 @@ export default function App() {
                         {agentTraces.map((trace) => {
                           const inputTokens = toNumber(trace.input_tokens);
                           const outputTokens = toNumber(trace.output_tokens);
-                          const cost = estimateCost(inputTokens, outputTokens, 'unknown', 'unknown');
 
                           return (
                             <button
@@ -548,7 +571,6 @@ export default function App() {
                               </div>
                               <div className="font-mono text-xs text-slate-300">duration: {formatDurationNs(trace.duration_ns)}</div>
                               <div className="font-mono text-xs text-slate-300">tokens: in {inputTokens} / out {outputTokens}</div>
-                              <div className="font-mono text-xs text-emerald-300">est. cost: ${cost.toFixed(6)}</div>
                               <div className="font-mono text-xs text-slate-400">time: {new Date(trace.last_received_at).toLocaleString()}</div>
                             </button>
                           );
