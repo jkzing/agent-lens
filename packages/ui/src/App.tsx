@@ -3,10 +3,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type TraceSummary = {
@@ -547,25 +548,16 @@ export default function App() {
           <section
             className={cn(
               'grid grid-cols-1 gap-4',
-              tracesCollapsed ? 'lg:grid-cols-[64px_minmax(0,1fr)]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'
+              tracesCollapsed ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'
             )}
           >
-            <aside className="rounded-xl border border-border bg-card p-3">
-              <Collapsible open={!tracesCollapsed} onOpenChange={(open) => setTracesCollapsed(!open)}>
-                <div className={cn('mb-2 flex items-center', tracesCollapsed ? 'justify-center' : 'justify-between')}>
-                  {tracesCollapsed ? (
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Traces</span>
-                  ) : (
-                    <h2 className="text-lg font-semibold">Traces ({filteredTraces.length})</h2>
-                  )}
-                  <CollapsibleTrigger asChild>
-                    <Button size="sm" variant="ghost" className={cn('h-8 px-2', tracesCollapsed && 'w-full')}>
-                      {tracesCollapsed ? 'Expand »' : '« Collapse'}
-                    </Button>
-                  </CollapsibleTrigger>
-                </div>
-
-                <CollapsibleContent>
+            <Collapsible open={!tracesCollapsed} onOpenChange={(open) => setTracesCollapsed(!open)}>
+              <CollapsibleContent
+                forceMount
+                className="overflow-hidden transition-all duration-200 data-[state=closed]:w-0 data-[state=closed]:opacity-0 data-[state=open]:w-full"
+              >
+                <aside className="rounded-xl border border-border bg-card p-3">
+                  <h2 className="mb-2 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
                   <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
                   {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
 
@@ -605,19 +597,37 @@ export default function App() {
                       ))}
                     </div>
                   </ScrollArea>
-                </CollapsibleContent>
-              </Collapsible>
-            </aside>
+                </aside>
+              </CollapsibleContent>
+            </Collapsible>
 
             <section
               className={cn(
                 'grid grid-cols-1 gap-4',
-                detailCollapsed ? 'xl:grid-cols-[minmax(0,1fr)_64px]' : 'xl:grid-cols-[minmax(0,1fr)_360px]'
+                detailCollapsed ? 'xl:grid-cols-[minmax(0,1fr)]' : 'xl:grid-cols-[minmax(0,1fr)_360px]'
               )}
             >
               <div className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-lg font-semibold">Trace Timeline</h2>
+                  <div className="flex items-center gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setTracesCollapsed((v) => !v)}>
+                          {tracesCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{tracesCollapsed ? 'Show Traces' : 'Hide Traces'}</TooltipContent>
+                    </Tooltip>
+                    <h2 className="text-lg font-semibold">Trace Timeline</h2>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setDetailCollapsed((v) => !v)}>
+                          {detailCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{detailCollapsed ? 'Show Details' : 'Hide Details'}</TooltipContent>
+                    </Tooltip>
+                  </div>
                   {selectedTrace ? (
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="secondary" onClick={() => exportTrace(selectedTrace.trace_id, 'json').catch((err) => setError(err.message || 'Export failed'))}>
@@ -769,22 +779,13 @@ export default function App() {
                 )}
               </div>
 
-              <aside className="rounded-xl border border-border bg-card p-3">
-                <Collapsible open={!detailCollapsed} onOpenChange={(open) => setDetailCollapsed(!open)}>
-                  <div className={cn('mb-2 flex items-center', detailCollapsed ? 'justify-center' : 'justify-between')}>
-                    {detailCollapsed ? (
-                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</span>
-                    ) : (
-                      <h2 className="text-lg font-semibold">Span Detail</h2>
-                    )}
-                    <CollapsibleTrigger asChild>
-                      <Button size="sm" variant="ghost" className={cn('h-8 px-2', detailCollapsed && 'w-full')}>
-                        {detailCollapsed ? '« Expand' : 'Collapse »'}
-                      </Button>
-                    </CollapsibleTrigger>
-                  </div>
-
-                  <CollapsibleContent>
+              <Collapsible open={!detailCollapsed} onOpenChange={(open) => setDetailCollapsed(!open)}>
+                <CollapsibleContent
+                  forceMount
+                  className="overflow-hidden transition-all duration-200 data-[state=closed]:w-0 data-[state=closed]:opacity-0 data-[state=open]:w-full"
+                >
+                  <aside className="rounded-xl border border-border bg-card p-3">
+                    <h2 className="mb-2 text-lg font-semibold">Details</h2>
                     {!selectedSpan ? (
                       <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
                     ) : (
@@ -877,9 +878,9 @@ export default function App() {
                     );
                   })()
                 )}
-                  </CollapsibleContent>
-                </Collapsible>
-              </aside>
+                  </aside>
+                </CollapsibleContent>
+              </Collapsible>
             </section>
           </section>
         </div>
