@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -327,6 +328,8 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [traceSearch, setTraceSearch] = useState('');
+  const [tracesCollapsed, setTracesCollapsed] = useState(false);
+  const [detailCollapsed, setDetailCollapsed] = useState(false);
 
   const loadTraces = useCallback(async () => {
     const res = await fetch('/api/traces?limit=200&offset=0');
@@ -541,51 +544,77 @@ export default function App() {
 
           {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-            <aside className="rounded-xl border border-border bg-card p-4">
-              <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
-              <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
-              {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
-
-              <ScrollArea className="h-[calc(100vh-250px)] pr-2">
-                <div className="space-y-3">
-                  {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
-                    <div key={agent}>
-                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{agent}</div>
-                      <div className="space-y-2">
-                        {agentTraces.map((trace) => {
-                          const inputTokens = toNumber(trace.input_tokens);
-                          const outputTokens = toNumber(trace.output_tokens);
-
-                          return (
-                            <button
-                              key={trace.trace_id}
-                              className={cn(
-                                'w-full rounded-lg border p-3 text-left transition',
-                                trace.trace_id === selectedTraceId
-                                  ? 'border-primary bg-primary/10'
-                                  : 'border-border bg-background/40 hover:border-ring/60'
-                              )}
-                              onClick={() => setSelectedTraceId(trace.trace_id)}
-                            >
-                              <div className="mb-1 flex items-center justify-between gap-2">
-                                <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
-                                <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground">{trace.span_count} spans</span>
-                              </div>
-                              <div className="font-mono text-xs text-muted-foreground">duration: {formatDurationNs(trace.duration_ns)}</div>
-                              <div className="font-mono text-xs text-muted-foreground">tokens: in {inputTokens} / out {outputTokens}</div>
-                              <div className="font-mono text-xs text-muted-foreground">time: {new Date(trace.last_received_at).toLocaleString()}</div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+          <section
+            className={cn(
+              'grid grid-cols-1 gap-4',
+              tracesCollapsed ? 'lg:grid-cols-[64px_minmax(0,1fr)]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'
+            )}
+          >
+            <aside className="rounded-xl border border-border bg-card p-3">
+              <Collapsible open={!tracesCollapsed} onOpenChange={(open) => setTracesCollapsed(!open)}>
+                <div className={cn('mb-2 flex items-center', tracesCollapsed ? 'justify-center' : 'justify-between')}>
+                  {tracesCollapsed ? (
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Traces</span>
+                  ) : (
+                    <h2 className="text-lg font-semibold">Traces ({filteredTraces.length})</h2>
+                  )}
+                  <CollapsibleTrigger asChild>
+                    <Button size="sm" variant="ghost" className={cn('h-8 px-2', tracesCollapsed && 'w-full')}>
+                      {tracesCollapsed ? 'Expand »' : '« Collapse'}
+                    </Button>
+                  </CollapsibleTrigger>
                 </div>
-              </ScrollArea>
+
+                <CollapsibleContent>
+                  <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
+                  {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
+
+                  <ScrollArea className="h-[calc(100vh-250px)] pr-2">
+                    <div className="space-y-3">
+                      {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
+                        <div key={agent}>
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{agent}</div>
+                          <div className="space-y-2">
+                            {agentTraces.map((trace) => {
+                              const inputTokens = toNumber(trace.input_tokens);
+                              const outputTokens = toNumber(trace.output_tokens);
+
+                              return (
+                                <button
+                                  key={trace.trace_id}
+                                  className={cn(
+                                    'w-full rounded-lg border p-3 text-left transition',
+                                    trace.trace_id === selectedTraceId
+                                      ? 'border-primary bg-primary/10'
+                                      : 'border-border bg-background/40 hover:border-ring/60'
+                                  )}
+                                  onClick={() => setSelectedTraceId(trace.trace_id)}
+                                >
+                                  <div className="mb-1 flex items-center justify-between gap-2">
+                                    <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
+                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground">{trace.span_count} spans</span>
+                                  </div>
+                                  <div className="font-mono text-xs text-muted-foreground">duration: {formatDurationNs(trace.duration_ns)}</div>
+                                  <div className="font-mono text-xs text-muted-foreground">tokens: in {inputTokens} / out {outputTokens}</div>
+                                  <div className="font-mono text-xs text-muted-foreground">time: {new Date(trace.last_received_at).toLocaleString()}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CollapsibleContent>
+              </Collapsible>
             </aside>
 
-            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <section
+              className={cn(
+                'grid grid-cols-1 gap-4',
+                detailCollapsed ? 'xl:grid-cols-[minmax(0,1fr)_64px]' : 'xl:grid-cols-[minmax(0,1fr)_360px]'
+              )}
+            >
               <div className="rounded-xl border border-border bg-card p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-lg font-semibold">Trace Timeline</h2>
@@ -740,12 +769,26 @@ export default function App() {
                 )}
               </div>
 
-              <aside className="rounded-xl border border-border bg-card p-4">
-                <h2 className="mb-3 text-lg font-semibold">Span Detail</h2>
-                {!selectedSpan ? (
-                  <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
-                ) : (
-                  (() => {
+              <aside className="rounded-xl border border-border bg-card p-3">
+                <Collapsible open={!detailCollapsed} onOpenChange={(open) => setDetailCollapsed(!open)}>
+                  <div className={cn('mb-2 flex items-center', detailCollapsed ? 'justify-center' : 'justify-between')}>
+                    {detailCollapsed ? (
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</span>
+                    ) : (
+                      <h2 className="text-lg font-semibold">Span Detail</h2>
+                    )}
+                    <CollapsibleTrigger asChild>
+                      <Button size="sm" variant="ghost" className={cn('h-8 px-2', detailCollapsed && 'w-full')}>
+                        {detailCollapsed ? '« Expand' : 'Collapse »'}
+                      </Button>
+                    </CollapsibleTrigger>
+                  </div>
+
+                  <CollapsibleContent>
+                    {!selectedSpan ? (
+                      <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
+                    ) : (
+                      (() => {
                     const attrs = parseJsonObject(selectedSpan.attributes);
                     const resourceAttrs = parseJsonObject(selectedSpan.resource_attributes);
                     const type = detectSpanType(selectedSpan, attrs);
@@ -834,6 +877,8 @@ export default function App() {
                     );
                   })()
                 )}
+                  </CollapsibleContent>
+                </Collapsible>
               </aside>
             </section>
           </section>
