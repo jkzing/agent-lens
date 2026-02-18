@@ -48,8 +48,33 @@ type SpanEvent = {
   attributes: Record<string, unknown>;
 };
 
-const INPUT_TOKEN_PRICE = 0.000003;
-const OUTPUT_TOKEN_PRICE = 0.000015;
+type PricingRule = {
+  key: string;
+  matchers: string[];
+  inputPerToken: number;
+  outputPerToken: number;
+};
+
+type ModelCostStat = {
+  key: string;
+  model: string;
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+};
+
+const PRICING_RULES: PricingRule[] = [
+  { key: 'openai:gpt-4o', matchers: ['openai/gpt-4o', 'gpt-4o'], inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+  { key: 'openai:gpt-4.1', matchers: ['openai/gpt-4.1', 'gpt-4.1'], inputPerToken: 0.000002, outputPerToken: 0.000008 },
+  { key: 'openai:gpt-5', matchers: ['openai-codex/gpt-5', 'openai/gpt-5', 'gpt-5'], inputPerToken: 0.000003, outputPerToken: 0.000015 },
+  { key: 'anthropic:claude-3-7', matchers: ['anthropic/claude-3-7', 'claude-3-7'], inputPerToken: 0.000003, outputPerToken: 0.000015 },
+  { key: 'anthropic:claude-sonnet-4', matchers: ['anthropic/claude-sonnet-4', 'claude-sonnet-4', 'sonnet'], inputPerToken: 0.000003, outputPerToken: 0.000015 },
+  { key: 'anthropic:claude-opus-4', matchers: ['anthropic/claude-opus-4', 'claude-opus-4', 'opus'], inputPerToken: 0.000015, outputPerToken: 0.000075 },
+  { key: 'google:gemini-2.5', matchers: ['google/gemini-2.5', 'gemini-2.5'], inputPerToken: 0.0000025, outputPerToken: 0.00001 },
+  { key: 'deepseek:deepseek-v3', matchers: ['deepseek/deepseek-v3', 'deepseek-v3'], inputPerToken: 0.000001, outputPerToken: 0.000002 },
+  { key: 'default', matchers: [], inputPerToken: 0.000003, outputPerToken: 0.000015 }
+];
 
 function formatDurationNs(durationNs: number | null): string {
   if (durationNs == null) return '-';
@@ -98,7 +123,7 @@ function parseSpanEvents(input: string | null): SpanEvent[] {
     return {
       name,
       timeUnixNano: Number.isFinite(parsedTime) ? parsedTime : null,
-      attributes,
+      attributes
     };
   };
 
@@ -142,10 +167,6 @@ function spanTypeColor(type: SpanKindType): string {
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-function estimateCost(inputTokens: number, outputTokens: number): number {
-  return inputTokens * INPUT_TOKEN_PRICE + outputTokens * OUTPUT_TOKEN_PRICE;
 }
 
 function detectLoopPattern(spans: SpanRow[]): Set<number> {
@@ -200,6 +221,97 @@ function formatTick(ns: number): string {
 function eventVariant(name: string): 'default' | 'outline' {
   if (name === 'gen_ai.content.prompt' || name === 'gen_ai.content.completion') return 'default';
   return 'outline';
+}
+
+function normalizeValue(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
+}
+
+function getSpanModelInfo(span: SpanRow): { provider: string; model: string } {
+  const attrs = parseJsonObject(span.attributes);
+  const resource = parseJsonObject(span.resource_attributes);
+  const model =
+    attrs['gen_ai.request.model'] ??
+    attrs['llm.model'] ??
+    attrs['model'] ??
+    attrs['ai.model'] ??
+    resource['gen_ai.request.model'] ??
+    resource['llm.model'] ??
+    resource['model'] ??
+    'unknown';
+  const provider =
+    attrs['gen_ai.system'] ??
+    attrs['gen_ai.provider'] ??
+    attrs['provider'] ??
+    resource['service.namespace'] ??
+    resource['provider'] ??
+    'unknown';
+
+  return {
+    model: typeof model === 'string' && model.trim() ? model.trim() : 'unknown',
+    provider: typeof provider === 'string' && provider.trim() ? provider.trim() : 'unknown'
+  };
+}
+
+function findPricingRule(provider: string, model: string): PricingRule {
+  const full = normalizeValue(`${provider}/${model}`);
+  const modelOnly = normalizeValue(model);
+  for (const rule of PRICING_RULES) {
+    if (rule.key === 'default') continue;
+    if (rule.matchers.some((m) => full.includes(m) || modelOnly.includes(m))) {
+      return rule;
+    }
+  }
+  return PRICING_RULES.find((r) => r.key === 'default')!;
+}
+
+function estimateCost(inputTokens: number, outputTokens: number, provider: string, model: string): number {
+  const rule = findPricingRule(provider, model);
+  return inputTokens * rule.inputPerToken + outputTokens * rule.outputPerToken;
+}
+
+function buildSpanContextRows(span: SpanRow): Array<{ label: string; value: string }> {
+  const attrs = parseJsonObject(span.attributes);
+  const resource = parseJsonObject(span.resource_attributes);
+  const candidates: Array<[string, string[]]> = [
+    ['sessionKey', ['session.key', 'sessionKey', 'openclaw.session_key', 'agent.session_key']],
+    ['sessionId', ['session.id', 'sessionId', 'openclaw.session_id', 'agent.session_id']],
+    ['channel', ['channel', 'messaging.channel', 'openclaw.channel', 'agent.channel']],
+    ['provider', ['gen_ai.provider', 'gen_ai.system', 'provider']],
+    ['model', ['gen_ai.request.model', 'llm.model', 'model']]
+  ];
+
+  const rows: Array<{ label: string; value: string }> = [];
+  for (const [label, keys] of candidates) {
+    let value: unknown;
+    for (const key of keys) {
+      value = attrs[key];
+      if (value != null && String(value).trim()) break;
+      value = resource[key];
+      if (value != null && String(value).trim()) break;
+    }
+    if (value != null && String(value).trim()) {
+      rows.push({ label, value: String(value) });
+    }
+  }
+  return rows;
+}
+
+async function exportTrace(traceId: string, format: 'json' | 'csv') {
+  const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}/export?format=${format}`);
+  if (!res.ok) {
+    throw new Error(`Export ${format.toUpperCase()} failed: ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trace-${traceId}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export default function App() {
@@ -304,18 +416,41 @@ export default function App() {
   const selectedSpan = spans.find((s) => s.id === selectedSpanId) || null;
   const suspiciousLoopSpanIds = useMemo(() => detectLoopPattern(spans), [spans]);
 
-  const traceTokenStats = useMemo(() => {
-    const input = spans.reduce((sum, span) => {
-      const attrs = parseJsonObject(span.attributes);
-      return sum + toNumber(attrs['gen_ai.usage.input_tokens']);
-    }, 0);
+  const traceCostStats = useMemo(() => {
+    const byModel = new Map<string, ModelCostStat>();
 
-    const output = spans.reduce((sum, span) => {
+    for (const span of spans) {
       const attrs = parseJsonObject(span.attributes);
-      return sum + toNumber(attrs['gen_ai.usage.output_tokens']);
-    }, 0);
+      const inputTokens = toNumber(attrs['gen_ai.usage.input_tokens']);
+      const outputTokens = toNumber(attrs['gen_ai.usage.output_tokens']);
+      if (inputTokens <= 0 && outputTokens <= 0) continue;
 
-    return { input, output, cost: estimateCost(input, output) };
+      const info = getSpanModelInfo(span);
+      const key = `${info.provider}::${info.model}`;
+      const cost = estimateCost(inputTokens, outputTokens, info.provider, info.model);
+      const existing = byModel.get(key);
+      if (existing) {
+        existing.inputTokens += inputTokens;
+        existing.outputTokens += outputTokens;
+        existing.cost += cost;
+      } else {
+        byModel.set(key, {
+          key,
+          model: info.model,
+          provider: info.provider,
+          inputTokens,
+          outputTokens,
+          cost
+        });
+      }
+    }
+
+    const modelRows = Array.from(byModel.values()).sort((a, b) => b.cost - a.cost);
+    const input = modelRows.reduce((sum, row) => sum + row.inputTokens, 0);
+    const output = modelRows.reduce((sum, row) => sum + row.outputTokens, 0);
+    const cost = modelRows.reduce((sum, row) => sum + row.cost, 0);
+
+    return { input, output, cost, modelRows };
   }, [spans]);
 
   const timelineMeta = useMemo(() => {
@@ -330,12 +465,12 @@ export default function App() {
     const maxEnd = ends.length ? Math.max(...ends) : minStart + 1;
     const total = Math.max(1, maxEnd - minStart);
 
-    return { minStart, maxEnd, total };
+    return { minStart, total };
   }, [spans]);
 
   const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
-
   const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
+  const selectedSpanContextRows = useMemo(() => (selectedSpan ? buildSpanContextRows(selectedSpan) : []), [selectedSpan]);
 
   return (
     <TooltipProvider>
@@ -382,12 +517,7 @@ export default function App() {
           <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
             <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
               <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
-              <Input
-                value={traceSearch}
-                onChange={(e) => setTraceSearch(e.target.value)}
-                placeholder="Search root span name..."
-                className="mb-3"
-              />
+              <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
               {loading ? <p className="text-sm text-slate-400">Loading traces...</p> : null}
 
               <ScrollArea className="h-[calc(100vh-250px)] pr-2">
@@ -399,7 +529,7 @@ export default function App() {
                         {agentTraces.map((trace) => {
                           const inputTokens = toNumber(trace.input_tokens);
                           const outputTokens = toNumber(trace.output_tokens);
-                          const cost = estimateCost(inputTokens, outputTokens);
+                          const cost = estimateCost(inputTokens, outputTokens, 'unknown', 'unknown');
 
                           return (
                             <button
@@ -432,7 +562,19 @@ export default function App() {
 
             <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-                <h2 className="mb-3 text-lg font-semibold">Trace Timeline</h2>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-lg font-semibold">Trace Timeline</h2>
+                  {selectedTrace ? (
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => exportTrace(selectedTrace.trace_id, 'json').catch((err) => setError(err.message || 'Export failed'))}>
+                        Export JSON
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => exportTrace(selectedTrace.trace_id, 'csv').catch((err) => setError(err.message || 'Export failed'))}>
+                        Export CSV
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
                 {!selectedTrace ? (
                   <p className="text-sm text-slate-400">Select a trace from the left list.</p>
                 ) : (
@@ -442,10 +584,26 @@ export default function App() {
                       <div>root: {selectedTrace.root_span_name}</div>
                       <div>duration: {formatDurationNs(selectedTrace.duration_ns)}</div>
                       <div>span count: {selectedTrace.span_count}</div>
-                      <div>input tokens: {traceTokenStats.input}</div>
-                      <div>output tokens: {traceTokenStats.output}</div>
-                      <div className="col-span-2 text-emerald-300">estimated cost: ${traceTokenStats.cost.toFixed(6)}</div>
+                      <div>input tokens: {traceCostStats.input}</div>
+                      <div>output tokens: {traceCostStats.output}</div>
+                      <div className="col-span-2 text-emerald-300">estimated cost: ${traceCostStats.cost.toFixed(6)}</div>
                     </div>
+
+                    {traceCostStats.modelRows.length > 0 ? (
+                      <div className="mb-3 rounded border border-slate-800 bg-slate-950/50 p-2">
+                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-300">Per-model cost breakdown</div>
+                        <div className="space-y-1">
+                          {traceCostStats.modelRows.map((row) => (
+                            <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_110px_110px_120px] gap-2 text-xs font-mono">
+                              <div className="truncate text-slate-200">{row.provider}/{row.model}</div>
+                              <div className="text-slate-300">in {row.inputTokens}</div>
+                              <div className="text-slate-300">out {row.outputTokens}</div>
+                              <div className="text-emerald-300">${row.cost.toFixed(6)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
 
                     {suspiciousLoopSpanIds.size > 0 ? (
                       <div className="mb-3 rounded border border-amber-600 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
@@ -471,8 +629,8 @@ export default function App() {
                       })}
                     </div>
 
-                    <ScrollArea className="h-[calc(100vh-420px)] rounded border border-slate-800 bg-slate-950/30 p-2">
-                      <div className="space-y-2 min-w-[760px]">
+                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-slate-800 bg-slate-950/30 p-2">
+                      <div className="min-w-[760px] space-y-2">
                         {spans.map((span) => {
                           const attrs = parseJsonObject(span.attributes);
                           const type = detectSpanType(span, attrs);
@@ -494,25 +652,15 @@ export default function App() {
                                 span.status_code === 2 && 'ring-1 ring-red-500/70'
                               )}
                             >
-                              <div className="grid grid-cols-[280px_minmax(0,1fr)] gap-3 items-center">
+                              <div className="grid grid-cols-[280px_minmax(0,1fr)] items-center gap-3">
                                 <div className="relative h-7">
                                   {guideLevels.map((level) => (
-                                    <span
-                                      key={level}
-                                      className="absolute top-0 h-full w-px bg-slate-700/90"
-                                      style={{ left: `${12 + level * 14}px` }}
-                                    />
+                                    <span key={level} className="absolute top-0 h-full w-px bg-slate-700/90" style={{ left: `${12 + level * 14}px` }} />
                                   ))}
                                   {span.depth > 0 ? (
-                                    <span
-                                      className="absolute top-1/2 h-px bg-slate-700/90"
-                                      style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }}
-                                    />
+                                    <span className="absolute top-1/2 h-px bg-slate-700/90" style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }} />
                                   ) : null}
-                                  <div
-                                    className="absolute top-1/2 -translate-y-1/2 truncate text-sm"
-                                    style={{ left: `${18 + span.depth * 14}px`, right: '0px' }}
-                                  >
+                                  <div className="absolute top-1/2 right-0 -translate-y-1/2 truncate text-sm" style={{ left: `${18 + span.depth * 14}px` }}>
                                     {span.name || 'unknown'}
                                     {suspiciousLoopSpanIds.has(span.id) ? (
                                       <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">loop?</span>
@@ -524,10 +672,7 @@ export default function App() {
                                   <TooltipTrigger asChild>
                                     <div className="relative h-7 rounded bg-slate-800/60">
                                       <div className="absolute inset-y-0 border-r border-slate-600/40" style={{ left: `${left}%` }} />
-                                      <div
-                                        className={`absolute top-1 h-5 rounded ${spanTypeColor(type)}`}
-                                        style={{ left: `${left}%`, width: `${width}%` }}
-                                      />
+                                      <div className={`absolute top-1 h-5 rounded ${spanTypeColor(type)}`} style={{ left: `${left}%`, width: `${width}%` }} />
                                     </div>
                                   </TooltipTrigger>
                                   <TooltipContent>
@@ -576,6 +721,20 @@ export default function App() {
                           <div>spanId: {selectedSpan.span_id || '-'}</div>
                           <div>duration: {formatDurationNs(selectedSpan.duration_ns)}</div>
                         </div>
+
+                        {selectedSpanContextRows.length > 0 ? (
+                          <div className="rounded border border-sky-700/40 bg-sky-950/20 p-2 text-xs">
+                            <div className="mb-1 font-semibold uppercase tracking-wide text-sky-300">Context</div>
+                            <div className="space-y-1 font-mono">
+                              {selectedSpanContextRows.map((row) => (
+                                <div key={row.label} className="flex gap-2">
+                                  <span className="text-slate-300">{row.label}:</span>
+                                  <span className="truncate text-slate-100">{row.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
 
                         <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
                           <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Attributes</summary>

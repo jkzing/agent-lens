@@ -213,6 +213,14 @@ function toNumber(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function csvEscape(value: unknown): string {
+  const str = value == null ? '' : String(value);
+  if (/[",\n]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 app.get('/api/traces', (c) => {
   const { limit, offset } = getPagination(c);
 
@@ -302,6 +310,49 @@ app.get('/api/traces', (c) => {
     items: enrichedItems,
     pagination: { offset, limit, total: totalRow.total }
   });
+});
+
+app.get('/api/traces/:traceId/export', (c) => {
+  const traceId = c.req.param('traceId');
+  const format = (c.req.query('format') || 'json').toLowerCase();
+
+  const rows = db
+    .prepare(
+      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
+              attributes, status_code, status, resource_attributes, events
+       FROM spans
+       WHERE trace_id = ?
+       ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC`
+    )
+    .all(traceId);
+
+  if (format === 'csv') {
+    const header = ['trace_id', 'span_id', 'parent_span_id', 'name', 'start', 'end', 'duration', 'status_code'];
+    const lines = [header.join(',')];
+    for (const row of rows as Array<any>) {
+      lines.push(
+        [
+          row.trace_id,
+          row.span_id,
+          row.parent_span_id,
+          row.name,
+          row.start_time_unix_nano,
+          row.end_time_unix_nano,
+          row.duration_ns,
+          row.status_code
+        ]
+          .map(csvEscape)
+          .join(',')
+      );
+    }
+    c.header('Content-Type', 'text/csv; charset=utf-8');
+    c.header('Content-Disposition', `attachment; filename="trace-${traceId}.csv"`);
+    return c.body(lines.join('\n'));
+  }
+
+  c.header('Content-Type', 'application/json; charset=utf-8');
+  c.header('Content-Disposition', `attachment; filename="trace-${traceId}.json"`);
+  return c.json({ ok: true, traceId, items: rows });
 });
 
 app.get('/api/traces/:traceId', (c) => {
