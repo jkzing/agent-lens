@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 type TraceSummary = {
   trace_id: string;
@@ -36,7 +42,12 @@ type SpanRow = {
 
 type SpanKindType = 'llm' | 'tool' | 'internal';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://10.0.0.8:4318';
+type SpanEvent = {
+  name: string;
+  timeUnixNano: number | null;
+  attributes: Record<string, unknown>;
+};
+
 const INPUT_TOKEN_PRICE = 0.000003;
 const OUTPUT_TOKEN_PRICE = 0.000015;
 
@@ -48,6 +59,10 @@ function formatDurationNs(durationNs: number | null): string {
   return `${(durationNs / 1_000_000_000).toFixed(2)} s`;
 }
 
+function formatOffsetMs(offsetNs: number): string {
+  return `${(offsetNs / 1_000_000).toFixed(2)} ms`;
+}
+
 function withinRange(iso: string, range: string): boolean {
   if (range === 'all') return true;
   const now = Date.now();
@@ -55,7 +70,7 @@ function withinRange(iso: string, range: string): boolean {
   const diff = now - t;
   if (range === '15m') return diff <= 15 * 60 * 1000;
   if (range === '1h') return diff <= 60 * 60 * 1000;
-  if (range === '24h') return diff <= 24 * 60 * 60 * 1000;
+  if (range === '24h') return diff <= 24 * 60 * 1000;
   return true;
 }
 
@@ -67,6 +82,42 @@ function parseJsonObject(input: string | null): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+function parseSpanEvents(input: string | null): SpanEvent[] {
+  if (!input) return [];
+
+  const toEvent = (item: unknown): SpanEvent | null => {
+    if (!item || typeof item !== 'object') return null;
+    const record = item as Record<string, unknown>;
+    const name = typeof record.name === 'string' ? record.name : 'unknown';
+    const rawTime = record.time_unix_nano ?? record.timeUnixNano ?? null;
+    const parsedTime = rawTime == null ? null : Number(rawTime);
+    const attrsRaw = record.attributes;
+    const attributes = attrsRaw && typeof attrsRaw === 'object' ? (attrsRaw as Record<string, unknown>) : {};
+    return {
+      name,
+      timeUnixNano: Number.isFinite(parsedTime) ? parsedTime : null,
+      attributes,
+    };
+  };
+
+  try {
+    const parsed = JSON.parse(input) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed.map(toEvent).filter((v): v is SpanEvent => v !== null);
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      if (Array.isArray(obj.events)) {
+        return obj.events.map(toEvent).filter((v): v is SpanEvent => v !== null);
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
 }
 
 function detectSpanType(span: SpanRow, attrs: Record<string, any>): SpanKindType {
@@ -124,6 +175,33 @@ function detectLoopPattern(spans: SpanRow[]): Set<number> {
   return suspiciousIds;
 }
 
+function getTimelineTicks(totalNs: number): number[] {
+  const totalMs = Math.max(1, totalNs / 1_000_000);
+  const targetTicks = 6;
+  const roughStep = totalMs / targetTicks;
+  const candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
+  const stepMs = candidates.find((v) => v >= roughStep) ?? candidates[candidates.length - 1];
+
+  const ticks: number[] = [];
+  for (let ms = 0; ms <= totalMs + 1e-6; ms += stepMs) {
+    ticks.push(ms * 1_000_000);
+  }
+  if (ticks[ticks.length - 1] < totalNs) ticks.push(totalNs);
+  return ticks;
+}
+
+function formatTick(ns: number): string {
+  const ms = ns / 1_000_000;
+  if (ms >= 1_000) return `${(ms / 1_000).toFixed(ms % 1_000 === 0 ? 0 : 1)}s`;
+  if (ms >= 1) return `${Math.round(ms)}ms`;
+  return `${ms.toFixed(2)}ms`;
+}
+
+function eventVariant(name: string): 'default' | 'outline' {
+  if (name === 'gen_ai.content.prompt' || name === 'gen_ai.content.completion') return 'default';
+  return 'outline';
+}
+
 export default function App() {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -134,9 +212,10 @@ export default function App() {
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
+  const [traceSearch, setTraceSearch] = useState('');
 
   const loadTraces = async (keepSelection = true) => {
-    const res = await fetch(`${API_BASE}/api/traces?limit=200&offset=0`);
+    const res = await fetch('/api/traces?limit=200&offset=0');
     if (!res.ok) throw new Error(`Load traces failed: ${res.status}`);
     const data = await res.json();
     const items = (Array.isArray(data.items) ? data.items : []) as TraceSummary[];
@@ -152,7 +231,7 @@ export default function App() {
   };
 
   const loadTraceDetail = async (traceId: string) => {
-    const res = await fetch(`${API_BASE}/api/traces/${encodeURIComponent(traceId)}?limit=500&offset=0`);
+    const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}?limit=500&offset=0`);
     if (!res.ok) throw new Error(`Load trace detail failed: ${res.status}`);
     const data = await res.json();
     const items = (Array.isArray(data.items) ? data.items : []) as SpanRow[];
@@ -187,7 +266,7 @@ export default function App() {
       refreshAll().catch(() => {});
     }, 5000);
     return () => clearInterval(timer);
-  }, [autoRefresh, selectedTraceId]);
+  }, [autoRefresh]);
 
   const agentOptions = useMemo(() => {
     const set = new Set<string>();
@@ -202,10 +281,13 @@ export default function App() {
     () =>
       traces.filter((trace) => {
         if (!withinRange(trace.last_received_at, range)) return false;
-        if (agentFilter === 'all') return true;
-        return (trace.service_names || []).includes(agentFilter) || trace.primary_service_name === agentFilter;
+        if (agentFilter !== 'all' && !(trace.service_names || []).includes(agentFilter) && trace.primary_service_name !== agentFilter) {
+          return false;
+        }
+        if (!traceSearch.trim()) return true;
+        return (trace.root_span_name || '').toLowerCase().includes(traceSearch.trim().toLowerCase());
       }),
-    [traces, range, agentFilter]
+    [traces, range, agentFilter, traceSearch]
   );
 
   const tracesByAgent = useMemo(() => {
@@ -218,7 +300,7 @@ export default function App() {
     return groups;
   }, [filteredTraces]);
 
-  const selectedTrace = filteredTraces.find((t) => t.trace_id === selectedTraceId) || null;
+  const selectedTrace = traces.find((t) => t.trace_id === selectedTraceId) || null;
   const selectedSpan = spans.find((s) => s.id === selectedSpanId) || null;
   const suspiciousLoopSpanIds = useMemo(() => detectLoopPattern(spans), [spans]);
 
@@ -248,230 +330,309 @@ export default function App() {
     const maxEnd = ends.length ? Math.max(...ends) : minStart + 1;
     const total = Math.max(1, maxEnd - minStart);
 
-    return { minStart, total };
+    return { minStart, maxEnd, total };
   }, [spans]);
 
+  const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
+
+  const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
+
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-7xl px-5 py-7">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-semibold">agent-lens</h1>
-            <p className="mt-1 text-sm text-slate-300">Trace timeline explorer</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
-              value={range}
-              onChange={(e) => setRange(e.target.value as any)}
-            >
-              <option value="all">All time</option>
-              <option value="15m">Last 15m</option>
-              <option value="1h">Last 1h</option>
-              <option value="24h">Last 24h</option>
-            </select>
-            <select
-              className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
-              value={agentFilter}
-              onChange={(e) => setAgentFilter(e.target.value)}
-            >
-              <option value="all">All agents</option>
-              {agentOptions.map((agent) => (
-                <option key={agent} value={agent}>
-                  {agent}
-                </option>
-              ))}
-            </select>
-            <label className="inline-flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={(e) => setAutoRefresh(e.target.checked)}
-              />
-              Auto refresh
-            </label>
-            <button
-              className="h-9 rounded-md border border-indigo-500 bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-500"
-              onClick={() => refreshAll()}
-            >
-              Refresh
-            </button>
-          </div>
-        </header>
-
-        {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-200">{error}</div> : null}
-
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4 lg:max-h-[calc(100vh-160px)] lg:overflow-auto">
-            <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
-            {loading ? <p className="text-sm text-slate-400">Loading traces...</p> : null}
-
-            <div className="space-y-3">
-              {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
-                <div key={agent}>
-                  <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{agent}</div>
-                  <div className="space-y-2">
-                    {agentTraces.map((trace) => {
-                      const inputTokens = toNumber(trace.input_tokens);
-                      const outputTokens = toNumber(trace.output_tokens);
-                      const cost = estimateCost(inputTokens, outputTokens);
-
-                      return (
-                        <button
-                          key={trace.trace_id}
-                          className={`w-full rounded-lg border p-3 text-left transition ${
-                            trace.trace_id === selectedTraceId
-                              ? 'border-indigo-500 bg-indigo-900/30'
-                              : 'border-slate-700 bg-slate-950/40 hover:border-slate-600'
-                          }`}
-                          onClick={() => setSelectedTraceId(trace.trace_id)}
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
-                            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200">{trace.span_count} spans</span>
-                          </div>
-                          <div className="font-mono text-xs text-slate-300">duration: {formatDurationNs(trace.duration_ns)}</div>
-                          <div className="font-mono text-xs text-slate-300">tokens: in {inputTokens} / out {outputTokens}</div>
-                          <div className="font-mono text-xs text-emerald-300">est. cost: ${cost.toFixed(6)}</div>
-                          <div className="font-mono text-xs text-slate-400">time: {new Date(trace.last_received_at).toLocaleString()}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+    <TooltipProvider>
+      <main className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="mx-auto max-w-7xl px-5 py-7">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-semibold">agent-lens</h1>
+              <p className="mt-1 text-sm text-slate-300">Trace timeline explorer</p>
             </div>
-          </aside>
-
-          <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <h2 className="mb-3 text-lg font-semibold">Trace Timeline</h2>
-              {!selectedTrace ? (
-                <p className="text-sm text-slate-400">Select a trace from the left list.</p>
-              ) : (
-                <>
-                  <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs text-slate-300">
-                    <div>traceId: {selectedTrace.trace_id}</div>
-                    <div>root: {selectedTrace.root_span_name}</div>
-                    <div>duration: {formatDurationNs(selectedTrace.duration_ns)}</div>
-                    <div>span count: {selectedTrace.span_count}</div>
-                    <div>input tokens: {traceTokenStats.input}</div>
-                    <div>output tokens: {traceTokenStats.output}</div>
-                    <div className="col-span-2 text-emerald-300">estimated cost: ${traceTokenStats.cost.toFixed(6)}</div>
-                  </div>
-
-                  {suspiciousLoopSpanIds.size > 0 ? (
-                    <div className="mb-3 rounded border border-amber-600 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
-                      ⚠ possible tool loop detected ({suspiciousLoopSpanIds.size} spans in repeated tool patterns)
-                    </div>
-                  ) : null}
-
-                  <div className="mb-3 flex items-center gap-3 text-xs text-slate-300">
-                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-violet-500" />LLM call</span>
-                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-cyan-500" />Tool call</span>
-                    <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-slate-500" />Internal</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    {spans.map((span) => {
-                      const attrs = parseJsonObject(span.attributes);
-                      const type = detectSpanType(span, attrs);
-                      const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
-                      const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
-                      const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
-                      const width = Math.max(1, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
-
-                      return (
-                        <button
-                          key={span.id}
-                          onClick={() => setSelectedSpanId(span.id)}
-                          className={`w-full rounded-md border p-2 text-left transition ${
-                            selectedSpanId === span.id
-                              ? 'border-indigo-500 bg-indigo-950/30'
-                              : 'border-slate-700 bg-slate-950/30 hover:border-slate-600'
-                          } ${span.status_code === 2 ? 'ring-1 ring-red-500/70' : ''}`}
-                        >
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <div className="truncate text-sm" style={{ paddingLeft: `${Math.min(span.depth * 14, 80)}px` }}>
-                              {span.name || 'unknown'}
-                              {suspiciousLoopSpanIds.has(span.id) ? (
-                                <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">loop?</span>
-                              ) : null}
-                            </div>
-                            <div className="text-xs text-slate-300">{formatDurationNs(span.duration_ns)}</div>
-                          </div>
-                          <div className="relative h-6 rounded bg-slate-800/60">
-                            <div className={`absolute top-1 h-4 rounded ${spanTypeColor(type)}`} style={{ left: `${left}%`, width: `${width}%` }} />
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
+                value={range}
+                onChange={(e) => setRange(e.target.value as 'all' | '15m' | '1h' | '24h')}
+              >
+                <option value="all">All time</option>
+                <option value="15m">Last 15m</option>
+                <option value="1h">Last 1h</option>
+                <option value="24h">Last 24h</option>
+              </select>
+              <select
+                className="h-9 rounded-md border border-slate-700 bg-slate-900 px-2 text-sm"
+                value={agentFilter}
+                onChange={(e) => setAgentFilter(e.target.value)}
+              >
+                <option value="all">All agents</option>
+                {agentOptions.map((agent) => (
+                  <option key={agent} value={agent}>
+                    {agent}
+                  </option>
+                ))}
+              </select>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                Auto refresh
+              </label>
+              <Button onClick={() => refreshAll()}>Refresh</Button>
             </div>
+          </header>
 
+          {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-200">{error}</div> : null}
+
+          <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
             <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-              <h2 className="mb-3 text-lg font-semibold">Span Detail</h2>
-              {!selectedSpan ? (
-                <p className="text-sm text-slate-400">Click a span in timeline to inspect details.</p>
-              ) : (
-                (() => {
-                  const attrs = parseJsonObject(selectedSpan.attributes);
-                  const resourceAttrs = parseJsonObject(selectedSpan.resource_attributes);
-                  const type = detectSpanType(selectedSpan, attrs);
-                  const inputTokens = attrs['gen_ai.usage.input_tokens'];
-                  const outputTokens = attrs['gen_ai.usage.output_tokens'];
-                  const toolInput = attrs['tool.input'] ?? attrs['tool.arguments'] ?? attrs['input'];
-                  const toolOutput = attrs['tool.output'] ?? attrs['output'];
+              <h2 className="mb-3 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
+              <Input
+                value={traceSearch}
+                onChange={(e) => setTraceSearch(e.target.value)}
+                placeholder="Search root span name..."
+                className="mb-3"
+              />
+              {loading ? <p className="text-sm text-slate-400">Loading traces...</p> : null}
 
-                  return (
-                    <div className="space-y-3 text-sm">
-                      {selectedSpan.status_code === 2 ? (
-                        <div className="rounded border border-red-700 bg-red-950/40 px-2 py-1 text-xs text-red-200">ERROR status span</div>
-                      ) : null}
+              <ScrollArea className="h-[calc(100vh-250px)] pr-2">
+                <div className="space-y-3">
+                  {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
+                    <div key={agent}>
+                      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{agent}</div>
+                      <div className="space-y-2">
+                        {agentTraces.map((trace) => {
+                          const inputTokens = toNumber(trace.input_tokens);
+                          const outputTokens = toNumber(trace.output_tokens);
+                          const cost = estimateCost(inputTokens, outputTokens);
 
-                      <div className="grid grid-cols-1 gap-1 font-mono text-xs text-slate-300">
-                        <div>name: {selectedSpan.name || 'unknown'}</div>
-                        <div>type: {type}</div>
-                        <div>traceId: {selectedSpan.trace_id}</div>
-                        <div>spanId: {selectedSpan.span_id || '-'}</div>
-                        <div>duration: {formatDurationNs(selectedSpan.duration_ns)}</div>
-                      </div>
-
-                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Attributes</summary>
-                        <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(attrs, null, 2)}</pre>
-                      </details>
-
-                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Resource Attributes</summary>
-                        <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(resourceAttrs, null, 2)}</pre>
-                      </details>
-
-                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Input (foldable)</summary>
-                        <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}</pre>
-                      </details>
-
-                      <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
-                        <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Output (foldable)</summary>
-                        <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}</pre>
-                      </details>
-
-                      <div className="rounded border border-slate-700 bg-slate-950/40 p-2 text-xs">
-                        <div className="mb-1 font-semibold uppercase tracking-wide text-slate-300">LLM token usage</div>
-                        <div className="font-mono text-slate-200">input: {inputTokens ?? '-'}</div>
-                        <div className="font-mono text-slate-200">output: {outputTokens ?? '-'}</div>
+                          return (
+                            <button
+                              key={trace.trace_id}
+                              className={cn(
+                                'w-full rounded-lg border p-3 text-left transition',
+                                trace.trace_id === selectedTraceId
+                                  ? 'border-indigo-500 bg-indigo-900/30'
+                                  : 'border-slate-700 bg-slate-950/40 hover:border-slate-600'
+                              )}
+                              onClick={() => setSelectedTraceId(trace.trace_id)}
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-2">
+                                <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
+                                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200">{trace.span_count} spans</span>
+                              </div>
+                              <div className="font-mono text-xs text-slate-300">duration: {formatDurationNs(trace.duration_ns)}</div>
+                              <div className="font-mono text-xs text-slate-300">tokens: in {inputTokens} / out {outputTokens}</div>
+                              <div className="font-mono text-xs text-emerald-300">est. cost: ${cost.toFixed(6)}</div>
+                              <div className="font-mono text-xs text-slate-400">time: {new Date(trace.last_received_at).toLocaleString()}</div>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                })()
-              )}
+                  ))}
+                </div>
+              </ScrollArea>
             </aside>
+
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <h2 className="mb-3 text-lg font-semibold">Trace Timeline</h2>
+                {!selectedTrace ? (
+                  <p className="text-sm text-slate-400">Select a trace from the left list.</p>
+                ) : (
+                  <>
+                    <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs text-slate-300">
+                      <div>traceId: {selectedTrace.trace_id}</div>
+                      <div>root: {selectedTrace.root_span_name}</div>
+                      <div>duration: {formatDurationNs(selectedTrace.duration_ns)}</div>
+                      <div>span count: {selectedTrace.span_count}</div>
+                      <div>input tokens: {traceTokenStats.input}</div>
+                      <div>output tokens: {traceTokenStats.output}</div>
+                      <div className="col-span-2 text-emerald-300">estimated cost: ${traceTokenStats.cost.toFixed(6)}</div>
+                    </div>
+
+                    {suspiciousLoopSpanIds.size > 0 ? (
+                      <div className="mb-3 rounded border border-amber-600 bg-amber-950/30 px-2 py-1 text-xs text-amber-200">
+                        ⚠ possible tool loop detected ({suspiciousLoopSpanIds.size} spans in repeated tool patterns)
+                      </div>
+                    ) : null}
+
+                    <div className="mb-3 flex items-center gap-3 text-xs text-slate-300">
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-violet-500" />LLM call</span>
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-cyan-500" />Tool call</span>
+                      <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-slate-500" />Internal</span>
+                    </div>
+
+                    <div className="mb-2 relative h-8 rounded border border-slate-800 bg-slate-950/50">
+                      {ticks.map((tickNs, idx) => {
+                        const leftPct = (tickNs / timelineMeta.total) * 100;
+                        return (
+                          <div key={`${tickNs}-${idx}`} className="absolute inset-y-0" style={{ left: `${leftPct}%` }}>
+                            <div className="h-full w-px bg-slate-700" />
+                            <div className="-translate-x-1/2 pt-0.5 text-[10px] text-slate-400">{formatTick(tickNs)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <ScrollArea className="h-[calc(100vh-420px)] rounded border border-slate-800 bg-slate-950/30 p-2">
+                      <div className="space-y-2 min-w-[760px]">
+                        {spans.map((span) => {
+                          const attrs = parseJsonObject(span.attributes);
+                          const type = detectSpanType(span, attrs);
+                          const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
+                          const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
+                          const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
+                          const width = Math.max(0.8, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
+                          const guideLevels = Array.from({ length: Math.max(0, span.depth) }, (_, i) => i);
+
+                          return (
+                            <button
+                              key={span.id}
+                              onClick={() => setSelectedSpanId(span.id)}
+                              className={cn(
+                                'w-full rounded-md border p-2 text-left transition',
+                                selectedSpanId === span.id
+                                  ? 'border-indigo-500 bg-indigo-950/30'
+                                  : 'border-slate-700 bg-slate-950/30 hover:border-slate-600',
+                                span.status_code === 2 && 'ring-1 ring-red-500/70'
+                              )}
+                            >
+                              <div className="grid grid-cols-[280px_minmax(0,1fr)] gap-3 items-center">
+                                <div className="relative h-7">
+                                  {guideLevels.map((level) => (
+                                    <span
+                                      key={level}
+                                      className="absolute top-0 h-full w-px bg-slate-700/90"
+                                      style={{ left: `${12 + level * 14}px` }}
+                                    />
+                                  ))}
+                                  {span.depth > 0 ? (
+                                    <span
+                                      className="absolute top-1/2 h-px bg-slate-700/90"
+                                      style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }}
+                                    />
+                                  ) : null}
+                                  <div
+                                    className="absolute top-1/2 -translate-y-1/2 truncate text-sm"
+                                    style={{ left: `${18 + span.depth * 14}px`, right: '0px' }}
+                                  >
+                                    {span.name || 'unknown'}
+                                    {suspiciousLoopSpanIds.has(span.id) ? (
+                                      <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] text-amber-300">loop?</span>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="relative h-7 rounded bg-slate-800/60">
+                                      <div className="absolute inset-y-0 border-r border-slate-600/40" style={{ left: `${left}%` }} />
+                                      <div
+                                        className={`absolute top-1 h-5 rounded ${spanTypeColor(type)}`}
+                                        style={{ left: `${left}%`, width: `${width}%` }}
+                                      />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="space-y-1">
+                                      <div className="font-semibold">{span.name || 'unknown'}</div>
+                                      <div>duration: {formatDurationNs(span.duration_ns)}</div>
+                                      <div>type: {type}</div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </>
+                )}
+              </div>
+
+              <aside className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                <h2 className="mb-3 text-lg font-semibold">Span Detail</h2>
+                {!selectedSpan ? (
+                  <p className="text-sm text-slate-400">Click a span in timeline to inspect details.</p>
+                ) : (
+                  (() => {
+                    const attrs = parseJsonObject(selectedSpan.attributes);
+                    const resourceAttrs = parseJsonObject(selectedSpan.resource_attributes);
+                    const type = detectSpanType(selectedSpan, attrs);
+                    const inputTokens = attrs['gen_ai.usage.input_tokens'];
+                    const outputTokens = attrs['gen_ai.usage.output_tokens'];
+                    const toolInput = attrs['tool.input'] ?? attrs['tool.arguments'] ?? attrs.input;
+                    const toolOutput = attrs['tool.output'] ?? attrs.output;
+                    const spanStart = selectedSpan.start_time_unix_nano ? Number(selectedSpan.start_time_unix_nano) : null;
+
+                    return (
+                      <div className="space-y-3 text-sm">
+                        {selectedSpan.status_code === 2 ? (
+                          <div className="rounded border border-red-700 bg-red-950/40 px-2 py-1 text-xs text-red-200">ERROR status span</div>
+                        ) : null}
+
+                        <div className="grid grid-cols-1 gap-1 font-mono text-xs text-slate-300">
+                          <div>name: {selectedSpan.name || 'unknown'}</div>
+                          <div>type: {type}</div>
+                          <div>traceId: {selectedSpan.trace_id}</div>
+                          <div>spanId: {selectedSpan.span_id || '-'}</div>
+                          <div>duration: {formatDurationNs(selectedSpan.duration_ns)}</div>
+                        </div>
+
+                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Attributes</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(attrs, null, 2)}</pre>
+                        </details>
+
+                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Resource Attributes</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{JSON.stringify(resourceAttrs, null, 2)}</pre>
+                        </details>
+
+                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Input (foldable)</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}</pre>
+                        </details>
+
+                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2">
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Tool Output (foldable)</summary>
+                          <pre className="mt-2 overflow-auto text-xs text-slate-200">{toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}</pre>
+                        </details>
+
+                        <details className="rounded border border-slate-700 bg-slate-950/40 p-2" open>
+                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-300">Events ({selectedSpanEvents.length})</summary>
+                          {selectedSpanEvents.length === 0 ? (
+                            <div className="mt-2 text-xs text-slate-400">(none)</div>
+                          ) : (
+                            <div className="mt-2 space-y-2">
+                              {selectedSpanEvents.map((event, idx) => {
+                                const offset = spanStart != null && event.timeUnixNano != null ? event.timeUnixNano - spanStart : null;
+                                return (
+                                  <div key={`${event.name}-${idx}`} className="rounded border border-slate-700/70 p-2">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                      <div className="font-mono text-xs text-slate-200">{offset == null ? 'offset: -' : `offset: ${formatOffsetMs(offset)}`}</div>
+                                      <Badge variant={eventVariant(event.name)}>{event.name}</Badge>
+                                    </div>
+                                    <pre className="overflow-auto text-xs text-slate-300">{JSON.stringify(event.attributes, null, 2)}</pre>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </details>
+
+                        <div className="rounded border border-slate-700 bg-slate-950/40 p-2 text-xs">
+                          <div className="mb-1 font-semibold uppercase tracking-wide text-slate-300">LLM token usage</div>
+                          <div className="font-mono text-slate-200">input: {inputTokens ?? '-'}</div>
+                          <div className="font-mono text-slate-200">output: {outputTokens ?? '-'}</div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </aside>
+            </section>
           </section>
-        </section>
-      </div>
-    </main>
+        </div>
+      </main>
+    </TooltipProvider>
   );
 }
