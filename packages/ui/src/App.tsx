@@ -656,17 +656,17 @@ export default function App() {
                       <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-internal" />Internal</span>
                     </div>
 
-                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30">
+                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30 [&_[data-radix-scroll-area-viewport]]:overflow-x-auto [&_[data-radix-scroll-area-viewport]]:overflow-y-auto">
                       <div className="p-2" style={{ width: `${timelineCanvasWidth}px`, minWidth: '100%' }}>
-                        <div className="mb-2 relative h-8 overflow-hidden rounded border border-border bg-background/50">
+                        <div className="mb-2 relative h-10 overflow-hidden rounded border border-border bg-background/50">
                           {ticks.map((tickNs, idx) => {
                             const leftPct = (tickNs / timelineMeta.total) * 100;
                             const labelTransform = leftPct < 6 ? 'translateX(0)' : leftPct > 94 ? 'translateX(-100%)' : 'translateX(-50%)';
                             return (
                               <div key={`${tickNs}-${idx}`}>
-                                <div className="absolute inset-y-0 w-px bg-border" style={{ left: `${leftPct}%` }} />
+                                <div className="absolute top-0 h-5 w-px bg-border" style={{ left: `${leftPct}%` }} />
                                 <div
-                                  className="absolute top-full pt-0.5 text-[10px] text-muted-foreground whitespace-nowrap"
+                                  className="absolute bottom-0 text-[10px] text-muted-foreground whitespace-nowrap"
                                   style={{ left: `${leftPct}%`, transform: labelTransform }}
                                 >
                                   {formatTick(tickNs)}
