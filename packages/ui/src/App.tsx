@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -330,6 +331,8 @@ export default function App() {
   const [traceSearch, setTraceSearch] = useState('');
   const [tracesCollapsed, setTracesCollapsed] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
+  const [selectedOverviewStepId, setSelectedOverviewStepId] = useState<number | null>(null);
+  const [overviewShowRaw, setOverviewShowRaw] = useState(false);
 
   const loadTraces = useCallback(async () => {
     const res = await fetch('/api/traces?limit=200&offset=0');
@@ -502,6 +505,73 @@ export default function App() {
   const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
   const selectedSpanContextRows = useMemo(() => (selectedSpan ? buildSpanContextRows(selectedSpan) : []), [selectedSpan]);
 
+  const spanById = useMemo(() => {
+    const m = new Map<string, SpanRow>();
+    for (const span of spans) {
+      if (span.span_id) m.set(span.span_id, span);
+    }
+    return m;
+  }, [spans]);
+
+  const overviewSteps = useMemo(() => {
+    const summarize = (attrs: Record<string, any>, keys: string[], fallback = '(none)') => {
+      for (const key of keys) {
+        const value = attrs[key];
+        if (value == null) continue;
+        const text = typeof value === 'string' ? value : JSON.stringify(value);
+        if (text && text.trim()) return text.length > 140 ? `${text.slice(0, 140)}…` : text;
+      }
+      return fallback;
+    };
+
+    return spans.map((span, index) => {
+      const attrs = parseJsonObject(span.attributes);
+      const parent = span.parent_span_id ? spanById.get(span.parent_span_id) : null;
+      const spanType = detectSpanType(span, attrs);
+      const status = span.status_code === 2 ? 'error' : span.end_time_unix_nano ? 'success' : 'running';
+      const fromActor = parent?.name || 'system';
+      const toActor = span.name || 'unknown';
+      const inputSummary = summarize(attrs, ['tool.input', 'tool.arguments', 'input', 'gen_ai.content.prompt', 'prompt']);
+      const outputSummary = summarize(attrs, ['tool.output', 'output', 'gen_ai.content.completion', 'completion']);
+      const inputTokens = toNumber(attrs['gen_ai.usage.input_tokens']);
+      const outputTokens = toNumber(attrs['gen_ai.usage.output_tokens']);
+      const modelInfo = getSpanModelInfo(span);
+      const cost = estimateCost(inputTokens, outputTokens, modelInfo.provider, modelInfo.model);
+      const actionType = spanType === 'tool' ? 'Tool Call' : spanType === 'llm' ? 'LLM Call' : 'Internal';
+
+      return {
+        id: span.id,
+        index: index + 1,
+        fromActor,
+        toActor,
+        actionType,
+        status,
+        duration: formatDurationNs(span.duration_ns),
+        inputSummary,
+        outputSummary,
+        inputTokens,
+        outputTokens,
+        cost,
+        attrs,
+        modelInfo,
+        errorMessage: span.status_code === 2 ? (attrs['error.message'] || attrs['exception.message'] || 'Span failed') : null,
+        startedAt: span.start_time_unix_nano ? Number(span.start_time_unix_nano) : 0
+      };
+    }).sort((a, b) => a.startedAt - b.startedAt || a.id - b.id);
+  }, [spans, spanById]);
+
+  const selectedOverviewStep = overviewSteps.find((s) => s.id === selectedOverviewStepId) || overviewSteps[0] || null;
+
+  useEffect(() => {
+    if (overviewSteps.length === 0) {
+      setSelectedOverviewStepId(null);
+      return;
+    }
+    if (!selectedOverviewStepId || !overviewSteps.some((s) => s.id === selectedOverviewStepId)) {
+      setSelectedOverviewStepId(overviewSteps[0].id);
+    }
+  }, [overviewSteps, selectedOverviewStepId]);
+
   return (
     <TooltipProvider>
       <main className="min-h-screen bg-background text-foreground">
@@ -544,6 +614,105 @@ export default function App() {
 
           {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
+          <Tabs defaultValue="overview" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="debug">Debug</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Interaction Timeline</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                  <ScrollArea className="h-[calc(100vh-260px)] rounded border border-border bg-background/30 p-2">
+                    <div className="space-y-2">
+                      {overviewSteps.length === 0 ? (
+                        <div className="rounded border border-border bg-background/40 p-3 text-sm text-muted-foreground">No steps yet for this trace.</div>
+                      ) : (
+                        overviewSteps.map((step) => (
+                          <button
+                            key={step.id}
+                            onClick={() => setSelectedOverviewStepId(step.id)}
+                            className={cn(
+                              'w-full rounded-lg border p-3 text-left transition',
+                              selectedOverviewStep?.id === step.id
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border bg-background/40 hover:border-ring/60'
+                            )}
+                          >
+                            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+                              <div className="font-semibold">Step {step.index} · {step.fromActor} → {step.toActor}</div>
+                              <Badge variant={step.status === 'error' ? 'destructive' : step.status === 'running' ? 'warning' : 'success'}>
+                                {step.status}
+                              </Badge>
+                            </div>
+                            <div className="mb-1 text-xs text-muted-foreground">{step.actionType} · {step.duration}</div>
+                            <div className="text-sm"><span className="font-medium">Input:</span> {step.inputSummary}</div>
+                            <div className="text-sm"><span className="font-medium">Output:</span> {step.outputSummary}</div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </ScrollArea>
+
+                  <Card className="h-fit">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Step Detail</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      {!selectedOverviewStep ? (
+                        <p className="text-muted-foreground">Select a step to inspect details.</p>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 gap-1 text-xs font-mono text-muted-foreground">
+                            <div>actor: {selectedOverviewStep.fromActor} → {selectedOverviewStep.toActor}</div>
+                            <div>type: {selectedOverviewStep.actionType}</div>
+                            <div>status: {selectedOverviewStep.status}</div>
+                            <div>duration: {selectedOverviewStep.duration}</div>
+                            {(selectedOverviewStep.inputTokens > 0 || selectedOverviewStep.outputTokens > 0) ? (
+                              <>
+                                <div>tokens: in {selectedOverviewStep.inputTokens} / out {selectedOverviewStep.outputTokens}</div>
+                                <div className="text-emerald-600 dark:text-emerald-400">cost: ${selectedOverviewStep.cost.toFixed(6)}</div>
+                              </>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded border border-border bg-background/40 p-2">
+                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Input Summary</div>
+                            <div>{selectedOverviewStep.inputSummary}</div>
+                          </div>
+                          <div className="rounded border border-border bg-background/40 p-2">
+                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Output Summary</div>
+                            <div>{selectedOverviewStep.outputSummary}</div>
+                          </div>
+
+                          {selectedOverviewStep.errorMessage ? (
+                            <div className="rounded border border-destructive/40 bg-destructive/15 p-2 text-destructive">
+                              {selectedOverviewStep.errorMessage}
+                            </div>
+                          ) : null}
+
+                          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                            <input type="checkbox" checked={overviewShowRaw} onChange={(e) => setOverviewShowRaw(e.target.checked)} />
+                            Show raw
+                          </label>
+
+                          {overviewShowRaw ? (
+                            <pre className="max-h-64 overflow-auto rounded border border-border bg-background/40 p-2 text-xs text-foreground">
+                              {JSON.stringify(selectedOverviewStep.attrs, null, 2)}
+                            </pre>
+                          ) : null}
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="debug" className="mt-0">
           <section
             className={cn(
               'grid grid-cols-1 gap-4',
@@ -876,6 +1045,8 @@ export default function App() {
               ) : null}
             </section>
           </section>
+            </TabsContent>
+          </Tabs>
         </div>
       </main>
     </TooltipProvider>
