@@ -5,21 +5,7 @@ import { Hono, type Context } from 'hono';
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
-
-type ParsedSpan = {
-  traceId: string;
-  spanId: string;
-  parentSpanId: string | null;
-  name: string;
-  kind: number | null;
-  startTimeUnixNano: string | null;
-  endTimeUnixNano: string | null;
-  durationNs: number | null;
-  attributes: string | null;
-  statusCode: number | null;
-  resourceAttributes: string | null;
-  events: string | null;
-};
+import { decodeOtlpProtobufTraceRequest, extractSpans, type ParsedSpan } from './otlp.js';
 
 const app = new Hono();
 app.use('*', cors());
@@ -47,6 +33,7 @@ CREATE TABLE IF NOT EXISTS spans (
   duration_ns INTEGER,
   attributes TEXT,
   status_code INTEGER,
+  status TEXT,
   resource_attributes TEXT,
   events TEXT,
   payload TEXT NOT NULL
@@ -76,6 +63,7 @@ ensureColumn('end_time_unix_nano', 'TEXT');
 ensureColumn('duration_ns', 'INTEGER');
 ensureColumn('attributes', 'TEXT');
 ensureColumn('status_code', 'INTEGER');
+ensureColumn('status', 'TEXT');
 ensureColumn('resource_attributes', 'TEXT');
 ensureColumn('events', 'TEXT');
 
@@ -92,91 +80,12 @@ const insertSpan = db.prepare(`
     duration_ns,
     attributes,
     status_code,
+    status,
     resource_attributes,
     events,
     payload
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
-
-function parseDurationNs(start?: string | number, end?: string | number): number | null {
-  if (start == null || end == null) return null;
-  const startNs = BigInt(String(start));
-  const endNs = BigInt(String(end));
-  const diff = endNs - startNs;
-  if (diff < 0n) return null;
-  if (diff > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
-  return Number(diff);
-}
-
-function toAttributeValue(value: any): unknown {
-  if (!value || typeof value !== 'object') return value;
-  if ('stringValue' in value) return value.stringValue;
-  if ('intValue' in value) return Number(value.intValue);
-  if ('doubleValue' in value) return Number(value.doubleValue);
-  if ('boolValue' in value) return Boolean(value.boolValue);
-  if ('bytesValue' in value) return String(value.bytesValue);
-  if ('arrayValue' in value) {
-    const values = Array.isArray(value.arrayValue?.values) ? value.arrayValue.values : [];
-    return values.map((item: any) => toAttributeValue(item));
-  }
-  if ('kvlistValue' in value) {
-    const values = Array.isArray(value.kvlistValue?.values) ? value.kvlistValue.values : [];
-    const result: Record<string, unknown> = {};
-    for (const item of values) {
-      if (!item?.key) continue;
-      result[item.key] = toAttributeValue(item.value);
-    }
-    return result;
-  }
-  return value;
-}
-
-function parseAttributeList(attributes: any): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const items = Array.isArray(attributes) ? attributes : [];
-
-  for (const item of items) {
-    if (!item?.key) continue;
-    result[item.key] = toAttributeValue(item.value);
-  }
-
-  return result;
-}
-
-function extractSpans(body: any): ParsedSpan[] {
-  const output: ParsedSpan[] = [];
-  const resourceSpans = Array.isArray(body?.resourceSpans) ? body.resourceSpans : [];
-
-  for (const resourceSpan of resourceSpans) {
-    const resourceAttrs = parseAttributeList(resourceSpan?.resource?.attributes);
-    const scopeSpans = Array.isArray(resourceSpan?.scopeSpans) ? resourceSpan.scopeSpans : [];
-
-    for (const scopeSpan of scopeSpans) {
-      const spans = Array.isArray(scopeSpan?.spans) ? scopeSpan.spans : [];
-
-      for (const span of spans) {
-        const events = Array.isArray(span?.events) ? span.events : [];
-
-        output.push({
-          traceId: span?.traceId ?? '',
-          spanId: span?.spanId ?? '',
-          parentSpanId: span?.parentSpanId ? String(span.parentSpanId) : null,
-          name: span?.name ?? 'unknown',
-          kind: typeof span?.kind === 'number' ? span.kind : null,
-          startTimeUnixNano: span?.startTimeUnixNano ? String(span.startTimeUnixNano) : null,
-          endTimeUnixNano: span?.endTimeUnixNano ? String(span.endTimeUnixNano) : null,
-          durationNs: parseDurationNs(span?.startTimeUnixNano, span?.endTimeUnixNano),
-          attributes: JSON.stringify(parseAttributeList(span?.attributes)),
-          statusCode: typeof span?.status?.code === 'number' ? span.status.code : null,
-          resourceAttributes: JSON.stringify(resourceAttrs),
-          events: events.length > 0 ? JSON.stringify(events) : null
-        });
-      }
-    }
-  }
-
-  return output;
-}
 
 app.get('/health', (c) => c.json({ ok: true, service: 'agent-lens-server' }));
 
@@ -197,28 +106,42 @@ app.post('/v1/traces', async (c) => {
   const contentType = (c.req.header('content-type') || '').toLowerCase();
   const receivedAt = new Date().toISOString();
 
+  let body: any = null;
+  let payload: string;
+
   if (contentType.includes('application/x-protobuf')) {
     const raw = Buffer.from(await c.req.arrayBuffer());
-    const payload = JSON.stringify({
+    payload = JSON.stringify({
       contentType: 'application/x-protobuf',
       encoding: 'base64',
       body: raw.toString('base64')
     });
 
-    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, payload);
-    return otlpExportResponse(c);
+    body = (() => {
+      try {
+        return decodeOtlpProtobufTraceRequest(raw);
+      } catch {
+        return null;
+      }
+    })();
+
+    if (!body) {
+      insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, null, payload);
+      return otlpExportResponse(c, 1, 'Invalid protobuf payload');
+    }
+  } else {
+    body = await c.req.json().catch(() => null);
+    if (!body) {
+      return otlpExportResponse(c, 1, 'Invalid JSON payload');
+    }
+
+    payload = JSON.stringify(body);
   }
 
-  const body = await c.req.json().catch(() => null);
-  if (!body) {
-    return otlpExportResponse(c, 1, 'Invalid JSON payload');
-  }
-
-  const payload = JSON.stringify(body);
   const parsedSpans = extractSpans(body);
 
   if (parsedSpans.length === 0) {
-    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, payload);
+    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, null, payload);
     return otlpExportResponse(c, 0, 'No valid spans found in payload');
   }
 
@@ -236,6 +159,7 @@ app.post('/v1/traces', async (c) => {
         row.durationNs,
         row.attributes,
         row.statusCode,
+        row.status,
         row.resourceAttributes,
         row.events,
         payload
@@ -264,7 +188,7 @@ app.get('/api/spans', (c) => {
   const rows = db
     .prepare(
       `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
-              attributes, status_code, resource_attributes, events
+              attributes, status_code, status, resource_attributes, events
        FROM spans
        ORDER BY id DESC
        LIMIT ? OFFSET ?`
@@ -387,7 +311,7 @@ app.get('/api/traces/:traceId', (c) => {
   const rows = db
     .prepare(
       `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
-              attributes, status_code, resource_attributes, events
+              attributes, status_code, status, resource_attributes, events
        FROM spans
        WHERE trace_id = ?
        ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC
@@ -406,6 +330,7 @@ app.get('/api/traces/:traceId', (c) => {
       duration_ns: number | null;
       attributes: string | null;
       status_code: number | null;
+      status: string | null;
       resource_attributes: string | null;
       events: string | null;
     }>;
