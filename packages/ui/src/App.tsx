@@ -342,6 +342,78 @@ async function exportTrace(traceId: string, format: 'json' | 'csv') {
   URL.revokeObjectURL(url);
 }
 
+type OverviewStep = {
+  id: number;
+  index: number;
+  fromActor: string;
+  toActor: string;
+  fromLane: 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System';
+  toLane: 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System';
+  actionType: string;
+  status: 'success' | 'running' | 'error' | 'waiting';
+  duration: string;
+  durationNs: number;
+  inputSummary: string;
+  outputSummary: string;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+  attrs: Record<string, any>;
+  modelInfo: { provider: string; model: string };
+  errorMessage: string | null;
+  startedAt: number;
+  timestamp: string;
+};
+
+function createMockScenario(baseIso: string, rows: Array<{
+  from: string;
+  to: string;
+  type: string;
+  status: 'success' | 'running' | 'error' | 'waiting';
+  durationMs: number;
+  offsetMs: number;
+  input: string;
+  output: string;
+  error?: string;
+  attrs?: Record<string, any>;
+  tokens?: { in: number; out: number; provider?: string; model?: string };
+}>): OverviewStep[] {
+  return rows.map((row, idx) => {
+    const ts = new Date(new Date(baseIso).getTime() + row.offsetMs).toISOString();
+    const inTokens = row.tokens?.in ?? 0;
+    const outTokens = row.tokens?.out ?? 0;
+    const provider = row.tokens?.provider ?? 'unknown';
+    const model = row.tokens?.model ?? 'unknown';
+    return {
+      id: 10_000 + idx,
+      index: idx + 1,
+      fromActor: row.from,
+      toActor: row.to,
+      fromLane: detectActor(row.from),
+      toLane: detectActor(row.to),
+      actionType: row.type,
+      status: row.status,
+      duration: `${row.durationMs} ms`,
+      durationNs: row.durationMs * 1_000_000,
+      inputSummary: row.input,
+      outputSummary: row.output,
+      inputTokens: inTokens,
+      outputTokens: outTokens,
+      cost: estimateCost(inTokens, outTokens, provider, model),
+      attrs: {
+        ...row.attrs,
+        'mock.input': row.input,
+        'mock.output': row.output,
+        ...(row.error ? { 'error.message': row.error } : {}),
+      },
+      modelInfo: { provider, model },
+      errorMessage: row.error ?? null,
+      startedAt: new Date(ts).getTime() * 1_000_000,
+      timestamp: ts,
+    };
+  });
+}
+
 export default function App() {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
@@ -360,6 +432,7 @@ export default function App() {
   const [overviewHoverStepId, setOverviewHoverStepId] = useState<number | null>(null);
   const [overviewActorFilter, setOverviewActorFilter] = useState<'all' | 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System'>('all');
   const [overviewTimeFilter, setOverviewTimeFilter] = useState<'all' | '5m' | '1h' | '24h'>('all');
+  const [overviewDataMode, setOverviewDataMode] = useState<'live' | 'demo-happy' | 'demo-handoff' | 'demo-recovery'>('live');
 
   const loadTraces = useCallback(async () => {
     const res = await fetch('/api/traces?limit=200&offset=0');
@@ -540,7 +613,7 @@ export default function App() {
     return m;
   }, [spans]);
 
-  const overviewSteps = useMemo(() => {
+  const overviewSteps = useMemo<OverviewStep[]>(() => {
     const summarize = (attrs: Record<string, any>, keys: string[], fallback = '(none)') => {
       for (const key of keys) {
         const value = attrs[key];
@@ -593,8 +666,40 @@ export default function App() {
     }).sort((a, b) => a.startedAt - b.startedAt || a.id - b.id);
   }, [spans, spanById]);
 
+  const overviewMockScenarios = useMemo(() => {
+    const base = new Date().toISOString();
+    return {
+      'demo-happy': createMockScenario(base, [
+        { from: 'Human', to: 'Lumi', type: 'send', status: 'success', durationMs: 120, offsetMs: 0, input: 'Ask for yesterday KPI summary', output: 'Intent parsed + requirements captured' },
+        { from: 'Lumi', to: 'Nyx', type: 'run', status: 'success', durationMs: 380, offsetMs: 400, input: 'Delegate data fetch & compose report', output: 'Task accepted with context', attrs: { handoff: true } },
+        { from: 'Nyx', to: 'System', type: 'tool', status: 'success', durationMs: 920, offsetMs: 1100, input: 'Query analytics DB for KPI window', output: 'Received KPI rows and deltas' },
+        { from: 'Nyx', to: 'Lumi', type: 'reply', status: 'success', durationMs: 260, offsetMs: 2200, input: 'Provide formatted KPI bullets', output: 'Delivered concise report draft' },
+        { from: 'Lumi', to: 'Human', type: 'reply', status: 'success', durationMs: 140, offsetMs: 2600, input: 'Render final summary', output: 'Summary sent to user', tokens: { in: 320, out: 180, provider: 'openai', model: 'gpt-4.1' } },
+      ]),
+      'demo-handoff': createMockScenario(base, [
+        { from: 'Human', to: 'Lumi', type: 'send', status: 'success', durationMs: 150, offsetMs: 0, input: 'Implement UI polish + bugfix', output: 'Task scoped into subtasks' },
+        { from: 'Lumi', to: 'Nyx', type: 'run', status: 'success', durationMs: 290, offsetMs: 500, input: 'Hotfix timeline alignment', output: 'Nyx starts coding', attrs: { handoff: 'Lumi->Nyx' } },
+        { from: 'Nyx', to: 'Runa', type: 'run', status: 'waiting', durationMs: 80, offsetMs: 950, input: 'Ask Runa to verify visual regressions', output: 'Awaiting verification response', attrs: { handoff: 'Nyx->Runa' } },
+        { from: 'Runa', to: 'System', type: 'tool', status: 'running', durationMs: 1800, offsetMs: 1300, input: 'Run screenshot comparison job', output: 'Comparing baseline vs current build' },
+        { from: 'Runa', to: 'Nyx', type: 'reply', status: 'success', durationMs: 260, offsetMs: 3400, input: 'Send validation findings', output: 'No blocker; minor spacing note' },
+        { from: 'Nyx', to: 'Lumi', type: 'reply', status: 'success', durationMs: 180, offsetMs: 3900, input: 'Return merged patch + notes', output: 'Patch ready to ship' },
+      ]),
+      'demo-recovery': createMockScenario(base, [
+        { from: 'Human', to: 'Lumi', type: 'send', status: 'success', durationMs: 110, offsetMs: 0, input: 'Generate release note digest', output: 'Plan drafted' },
+        { from: 'Lumi', to: 'Nyx', type: 'run', status: 'success', durationMs: 240, offsetMs: 320, input: 'Collect PR metadata and summarize', output: 'Execution started' },
+        { from: 'Nyx', to: 'System', type: 'tool', status: 'error', durationMs: 740, offsetMs: 820, input: 'Fetch PR data from API', output: 'HTTP 502 from upstream', error: 'Gateway timeout while calling GitHub API' },
+        { from: 'Nyx', to: 'System', type: 'tool', status: 'success', durationMs: 910, offsetMs: 1900, input: 'Retry fetch with fallback mirror', output: 'Recovered data from mirror endpoint', attrs: { retry: 1 } },
+        { from: 'Nyx', to: 'Lumi', type: 'reply', status: 'success', durationMs: 220, offsetMs: 3000, input: 'Send recovered summary draft', output: 'Summary accepted after retry' },
+        { from: 'Lumi', to: 'Human', type: 'reply', status: 'success', durationMs: 130, offsetMs: 3380, input: 'Deliver final digest', output: 'User received release digest', tokens: { in: 280, out: 160, provider: 'anthropic', model: 'claude-sonnet-4' } },
+      ]),
+    } as const;
+  }, []);
+
+  const effectiveOverviewMode = overviewDataMode === 'live' && overviewSteps.length === 0 ? 'demo-recovery' : overviewDataMode;
+  const activeOverviewSteps = effectiveOverviewMode === 'live' ? overviewSteps : overviewMockScenarios[effectiveOverviewMode];
+
   const filteredOverviewSteps = useMemo(() => {
-    return overviewSteps.filter((step) => {
+    return activeOverviewSteps.filter((step) => {
       if (overviewActorFilter !== 'all' && step.fromLane !== overviewActorFilter && step.toLane !== overviewActorFilter) return false;
       if (overviewTimeFilter === 'all') return true;
       const ageMs = Date.now() - new Date(step.timestamp).getTime();
@@ -603,7 +708,7 @@ export default function App() {
       if (overviewTimeFilter === '24h') return ageMs <= 24 * 60 * 60 * 1000;
       return true;
     });
-  }, [overviewSteps, overviewActorFilter, overviewTimeFilter]);
+  }, [activeOverviewSteps, overviewActorFilter, overviewTimeFilter]);
 
   const selectedOverviewStep = filteredOverviewSteps.find((s) => s.id === selectedOverviewStepId) || filteredOverviewSteps[0] || null;
 
@@ -710,7 +815,22 @@ export default function App() {
                       <option value="Runa">Runa</option>
                       <option value="System">System</option>
                     </select>
+                    <select
+                      className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+                      value={overviewDataMode}
+                      onChange={(e) => setOverviewDataMode(e.target.value as 'live' | 'demo-happy' | 'demo-handoff' | 'demo-recovery')}
+                    >
+                      <option value="live">Live data</option>
+                      <option value="demo-happy">Demo: happy path</option>
+                      <option value="demo-handoff">Demo: multi-agent handoff</option>
+                      <option value="demo-recovery">Demo: error + retry recovery</option>
+                    </select>
                   </div>
+                  {overviewDataMode === 'live' && effectiveOverviewMode !== 'live' ? (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Live trace data is empty, auto-fallback to demo scenario: error + retry recovery.
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
 
