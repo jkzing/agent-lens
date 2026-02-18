@@ -3,7 +3,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -551,10 +550,11 @@ export default function App() {
               tracesCollapsed ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'
             )}
           >
-            <Collapsible open={!tracesCollapsed} onOpenChange={(open) => setTracesCollapsed(!open)}>
-              <CollapsibleContent className="overflow-hidden transition-opacity duration-200">
-                <aside className="rounded-xl border border-border bg-card p-3">
-                  <h2 className="mb-2 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
+            {!tracesCollapsed ? (
+              <aside className="rounded-xl border border-border bg-card p-4">
+                  <div className="mb-3 flex h-9 items-center">
+                    <h2 className="text-lg font-semibold">Traces ({filteredTraces.length})</h2>
+                  </div>
                   <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
                   {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
 
@@ -594,9 +594,8 @@ export default function App() {
                       ))}
                     </div>
                   </ScrollArea>
-                </aside>
-              </CollapsibleContent>
-            </Collapsible>
+              </aside>
+            ) : null}
 
             <section
               className={cn(
@@ -605,7 +604,7 @@ export default function App() {
               )}
             >
               <div className="rounded-xl border border-border bg-card p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="mb-3 flex h-9 items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -776,10 +775,11 @@ export default function App() {
                 )}
               </div>
 
-              <Collapsible open={!detailCollapsed} onOpenChange={(open) => setDetailCollapsed(!open)}>
-                <CollapsibleContent className="overflow-hidden transition-opacity duration-200">
-                  <aside className="rounded-xl border border-border bg-card p-3">
-                    <h2 className="mb-2 text-lg font-semibold">Details</h2>
+              {!detailCollapsed ? (
+              <aside className="rounded-xl border border-border bg-card p-4">
+                    <div className="mb-3 flex h-9 items-center">
+                      <h2 className="text-lg font-semibold">Details</h2>
+                    </div>
                     {!selectedSpan ? (
                       <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
                     ) : (
@@ -872,9 +872,8 @@ export default function App() {
                     );
                   })()
                 )}
-                  </aside>
-                </CollapsibleContent>
-              </Collapsible>
+              </aside>
+              ) : null}
             </section>
           </section>
         </div>
