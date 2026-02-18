@@ -552,10 +552,7 @@ export default function App() {
             )}
           >
             <Collapsible open={!tracesCollapsed} onOpenChange={(open) => setTracesCollapsed(!open)}>
-              <CollapsibleContent
-                forceMount
-                className="overflow-hidden transition-all duration-200 data-[state=closed]:w-0 data-[state=closed]:opacity-0 data-[state=open]:w-full"
-              >
+              <CollapsibleContent className="overflow-hidden transition-opacity duration-200">
                 <aside className="rounded-xl border border-border bg-card p-3">
                   <h2 className="mb-2 text-lg font-semibold">Traces ({filteredTraces.length})</h2>
                   <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
@@ -603,7 +600,7 @@ export default function App() {
 
             <section
               className={cn(
-                'grid grid-cols-1 gap-4',
+                'min-w-0 grid grid-cols-1 gap-4',
                 detailCollapsed ? 'xl:grid-cols-[minmax(0,1fr)]' : 'xl:grid-cols-[minmax(0,1fr)_360px]'
               )}
             >
@@ -780,10 +777,7 @@ export default function App() {
               </div>
 
               <Collapsible open={!detailCollapsed} onOpenChange={(open) => setDetailCollapsed(!open)}>
-                <CollapsibleContent
-                  forceMount
-                  className="overflow-hidden transition-all duration-200 data-[state=closed]:w-0 data-[state=closed]:opacity-0 data-[state=open]:w-full"
-                >
+                <CollapsibleContent className="overflow-hidden transition-opacity duration-200">
                   <aside className="rounded-xl border border-border bg-card p-3">
                     <h2 className="mb-2 text-lg font-semibold">Details</h2>
                     {!selectedSpan ? (
