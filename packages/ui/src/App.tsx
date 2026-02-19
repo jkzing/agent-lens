@@ -2,12 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { useTraceData, type SpanRow, type TraceSummary } from '@/hooks/useTraceData';
+import { DebugPanel } from '@/features/debug/DebugPanel';
+import { exportTrace, formatOffsetMs, formatTick, getTimelineTicks } from '@/features/debug/utils';
 import { OverviewPanel, type OverviewStep } from '@/features/overview/OverviewPanel';
-import { TraceDetailPanel } from '@/features/traces/TraceDetailPanel';
-import { TraceListPanel } from '@/features/traces/TraceListPanel';
-import { TraceTimelinePanel } from '@/features/waterfall/TraceTimelinePanel';
 
 type SpanKindType = 'llm' | 'tool' | 'internal';
 
@@ -51,10 +49,6 @@ function formatDurationNs(durationNs: number | null): string {
   if (durationNs < 1_000_000) return `${(durationNs / 1_000).toFixed(2)} μs`;
   if (durationNs < 1_000_000_000) return `${(durationNs / 1_000_000).toFixed(2)} ms`;
   return `${(durationNs / 1_000_000_000).toFixed(2)} s`;
-}
-
-function formatOffsetMs(offsetNs: number): string {
-  return `${(offsetNs / 1_000_000).toFixed(2)} ms`;
 }
 
 function withinRange(iso: string, range: string): boolean {
@@ -165,28 +159,6 @@ function detectLoopPattern(spans: SpanRow[]): Set<number> {
   return suspiciousIds;
 }
 
-function getTimelineTicks(totalNs: number): number[] {
-  const totalMs = Math.max(1, totalNs / 1_000_000);
-  const targetTicks = 6;
-  const roughStep = totalMs / targetTicks;
-  const candidates = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000];
-  const stepMs = candidates.find((v) => v >= roughStep) ?? candidates[candidates.length - 1];
-
-  const ticks: number[] = [];
-  for (let ms = 0; ms <= totalMs + 1e-6; ms += stepMs) {
-    ticks.push(ms * 1_000_000);
-  }
-  if (ticks[ticks.length - 1] < totalNs) ticks.push(totalNs);
-  return ticks;
-}
-
-function formatTick(ns: number): string {
-  const ms = ns / 1_000_000;
-  if (ms >= 1_000) return `${(ms / 1_000).toFixed(ms % 1_000 === 0 ? 0 : 1)}s`;
-  if (ms >= 1) return `${Math.round(ms)}ms`;
-  return `${ms.toFixed(2)}ms`;
-}
-
 function detectActor(name: string): 'Human' | 'Lumi' | 'Nyx' | 'Runa' | 'System' {
   const n = (name || '').toLowerCase();
   if (n.includes('human') || n.includes('user') || n.includes('kai')) return 'Human';
@@ -269,22 +241,6 @@ function buildSpanContextRows(span: SpanRow): Array<{ label: string; value: stri
     }
   }
   return rows;
-}
-
-async function exportTrace(traceId: string, format: 'json' | 'csv') {
-  const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}/export?format=${format}`);
-  if (!res.ok) {
-    throw new Error(`Export ${format.toUpperCase()} failed: ${res.status}`);
-  }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `trace-${traceId}.${format}`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 function createMockScenario(baseIso: string, rows: Array<{
@@ -726,14 +682,11 @@ export default function App() {
             </TabsContent>
 
             <TabsContent value="debug" className="mt-0">
-          <section
-            className={cn(
-              'grid grid-cols-1 gap-4',
-              tracesCollapsed ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[320px_minmax(0,1fr)]'
-            )}
-          >
-            {!tracesCollapsed ? (
-              <TraceListPanel
+              <DebugPanel
+                tracesCollapsed={tracesCollapsed}
+                setTracesCollapsed={setTracesCollapsed}
+                detailCollapsed={detailCollapsed}
+                setDetailCollapsed={setDetailCollapsed}
                 filteredTraces={filteredTraces}
                 tracesByAgent={tracesByAgent}
                 loading={loading}
@@ -741,22 +694,6 @@ export default function App() {
                 setTraceSearch={setTraceSearch}
                 selectedTraceId={selectedTraceId}
                 setSelectedTraceId={setSelectedTraceId}
-                formatDurationNs={formatDurationNs}
-                toNumber={toNumber}
-              />
-            ) : null}
-
-            <section
-              className={cn(
-                'min-w-0 grid grid-cols-1 gap-4',
-                detailCollapsed ? 'xl:grid-cols-[minmax(0,1fr)]' : 'xl:grid-cols-[minmax(0,1fr)_360px]'
-              )}
-            >
-              <TraceTimelinePanel
-                tracesCollapsed={tracesCollapsed}
-                setTracesCollapsed={setTracesCollapsed}
-                detailCollapsed={detailCollapsed}
-                setDetailCollapsed={setDetailCollapsed}
                 selectedTrace={selectedTrace}
                 setError={setError}
                 exportTrace={exportTrace}
@@ -766,6 +703,9 @@ export default function App() {
                 spans={spans}
                 selectedSpanId={selectedSpanId}
                 setSelectedSpanId={setSelectedSpanId}
+                selectedSpan={selectedSpan}
+                selectedSpanEvents={selectedSpanEvents}
+                selectedSpanContextRows={selectedSpanContextRows}
                 traceCostStats={traceCostStats}
                 suspiciousLoopSpanIds={suspiciousLoopSpanIds}
                 parseJsonObject={parseJsonObject}
@@ -781,20 +721,6 @@ export default function App() {
                 toNumber={toNumber}
                 formatTick={formatTick}
               />
-
-              {!detailCollapsed ? (
-                <TraceDetailPanel
-                  selectedSpan={selectedSpan}
-                  selectedSpanEvents={selectedSpanEvents}
-                  selectedSpanContextRows={selectedSpanContextRows}
-                  parseJsonObject={parseJsonObject}
-                  detectSpanType={detectSpanType}
-                  formatDurationNs={formatDurationNs}
-                  formatOffsetMs={formatOffsetMs}
-                />
-              ) : null}
-            </section>
-          </section>
             </TabsContent>
           </Tabs>
         </div>
