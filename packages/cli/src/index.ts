@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import * as TOML from '@iarna/toml';
 
@@ -27,13 +28,17 @@ const serverEntry = require.resolve('@agent-lens/server');
 const uiPackageJson = require.resolve('@agent-lens/ui/package.json');
 const uiDist = path.join(path.dirname(uiPackageJson), 'dist');
 
+const appHome = path.join(os.homedir(), '.agent-lens');
+const defaultTomlPath = path.join(appHome, 'config.toml');
+const defaultJsonPath = path.join(appHome, 'config.json');
+
 const DEFAULTS = {
   port: 4318,
   open: true,
-  dataDir: path.resolve(process.cwd(), 'data')
+  dataDir: path.join(appHome, 'data')
 } as const;
 
-const CONFIG_TEMPLATE = `# agent-lens configuration (v1)\n# Save as agent-lens.toml\n\n[server]\n# Local server port\nport = 4318\n\n# Data directory for SQLite storage\ndataDir = "./data"\n\n[ui]\n# Auto-open browser on startup\nopen = true\n`;
+const CONFIG_TEMPLATE = `# agent-lens configuration (v1)\n# Default location: ~/.agent-lens/config.toml\n\n[server]\n# Local server port\nport = 4318\n\n# Data directory for SQLite storage\ndataDir = "${DEFAULTS.dataDir.replaceAll('\\', '\\\\')}"\n\n[ui]\n# Auto-open browser on startup\nopen = true\n`;
 
 function openBrowser(url: string) {
   const platform = process.platform;
@@ -48,13 +53,9 @@ function openBrowser(url: string) {
   spawn('xdg-open', [url], { stdio: 'ignore', detached: true });
 }
 
-function discoverConfigPath(cwd: string): string | null {
-  const tomlPath = path.resolve(cwd, 'agent-lens.toml');
-  if (fs.existsSync(tomlPath)) return tomlPath;
-
-  const jsonPath = path.resolve(cwd, 'agent-lens.json');
-  if (fs.existsSync(jsonPath)) return jsonPath;
-
+function discoverConfigPath(): string | null {
+  if (fs.existsSync(defaultTomlPath)) return defaultTomlPath;
+  if (fs.existsSync(defaultJsonPath)) return defaultJsonPath;
   return null;
 }
 
@@ -129,7 +130,7 @@ function validateConfig(config: unknown, source = 'config'): { config: LensConfi
 }
 
 function loadConfig(explicitPath?: string): { path: string | null; config: LensConfig } {
-  const configPath = explicitPath ? path.resolve(process.cwd(), explicitPath) : discoverConfigPath(process.cwd());
+  const configPath = explicitPath ? path.resolve(process.cwd(), explicitPath) : discoverConfigPath();
   if (!configPath) {
     return { path: null, config: {} };
   }
@@ -239,14 +240,15 @@ async function main() {
 
   configCmd
     .command('init')
-    .description('create agent-lens.toml in current directory')
+    .description('create default config at ~/.agent-lens/config.toml')
     .action(() => {
-      const filePath = path.resolve(process.cwd(), 'agent-lens.toml');
+      const filePath = defaultTomlPath;
       if (fs.existsSync(filePath)) {
         console.error(`[agent-lens] config already exists: ${filePath}`);
         process.exit(1);
       }
 
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, CONFIG_TEMPLATE, 'utf8');
       console.log(`[agent-lens] created ${filePath}`);
     });
@@ -257,10 +259,10 @@ async function main() {
     .option('--config <path>', 'path to config file (default: auto-discovery)')
     .action((opts) => {
       const explicit = typeof opts.config === 'string' ? opts.config : undefined;
-      const configPath = explicit ? path.resolve(process.cwd(), explicit) : discoverConfigPath(process.cwd());
+      const configPath = explicit ? path.resolve(process.cwd(), explicit) : discoverConfigPath();
 
       if (!configPath) {
-        console.error('[agent-lens] no config file found (expected agent-lens.toml or agent-lens.json)');
+        console.error(`[agent-lens] no config file found (expected ${defaultTomlPath} or ${defaultJsonPath})`);
         process.exit(1);
       }
 
