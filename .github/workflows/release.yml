@@ -87,12 +87,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build packages for release
+        run: pnpm -r build
+
       - name: Pack publish artifacts
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
           mkdir -p /tmp/release-tarballs
           (cd packages/server && pnpm pack --pack-destination /tmp/release-tarballs)
           (cd packages/ui && pnpm pack --pack-destination /tmp/release-tarballs)
           (cd packages/cli && pnpm pack --pack-destination /tmp/release-tarballs)
+
+          # Ensure tarballs include build outputs (dist)
+          tar -tzf "/tmp/release-tarballs/agent-lens-server-${VERSION}.tgz" | grep -q "package/dist/index.js"
+          tar -tzf "/tmp/release-tarballs/agent-lens-ui-${VERSION}.tgz" | grep -q "package/dist/index.html"
+          tar -tzf "/tmp/release-tarballs/agent-lens-cli-${VERSION}.tgz" | grep -q "package/dist/index.js"
+
           ls -lh /tmp/release-tarballs
 
       - name: Publish @agent-lens/server (Trusted Publishing)
