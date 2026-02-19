@@ -74,6 +74,7 @@ It includes:
 - build/typecheck gates
 - `pnpm pack` dry-run checks
 - npm publish order (`server` → `ui` → `cli`)
+- GitHub Actions release workflow (`.github/workflows/release.yml`)
 
 ## Demo
 

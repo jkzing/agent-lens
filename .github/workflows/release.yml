@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run checks only (no npm publish)"
+        required: true
+        type: boolean
+        default: true
+      npm_tag:
+        description: "npm dist-tag to publish under"
+        required: true
+        type: string
+        default: "latest"
+      create_git_tag:
+        description: "Create and push git tag (vX.Y.Z) after publish"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release preflight
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate package versions are aligned
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -e "const fs=require('fs'); const paths=['packages/server/package.json','packages/ui/package.json','packages/cli/package.json']; const versions=paths.map(p=>JSON.parse(fs.readFileSync(p,'utf8')).version); if(new Set(versions).size!==1){console.error('Package versions are not aligned:', versions.join(', ')); process.exit(1);} process.stdout.write(versions[0]);")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected release version: $VERSION"
+
+      - name: Run release preflight checks
+        run: pnpm release:check
+
+  publish:
+    name: Publish packages to npm
+    needs: verify
+    if: ${{ inputs.dry_run == false }}
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ensure npm token exists
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN secret is missing. Configure it in repository settings."
+            exit 1
+          fi
+
+      - name: Publish @agent-lens/server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          cd packages/server
+          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+
+      - name: Publish @agent-lens/ui
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          cd packages/ui
+          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+
+      - name: Publish agent-lens CLI
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+        run: |
+          cd packages/cli
+          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+
+  tag:
+    name: Tag release
+    needs: [verify, publish]
+    if: ${{ inputs.dry_run == false && inputs.create_git_tag == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create and push git tag
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally."
+            exit 1
+          fi
+
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists on origin."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+  summary:
+    name: Release summary
+    needs: [verify, publish, tag]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report
+        run: |
+          echo "Version: ${{ needs.verify.outputs.version }}"
+          echo "Dry run: ${{ inputs.dry_run }}"
+          echo "npm tag: ${{ inputs.npm_tag }}"
+          echo "Publish result: ${{ needs.publish.result }}"
+          echo "Tag result: ${{ needs.tag.result }}"

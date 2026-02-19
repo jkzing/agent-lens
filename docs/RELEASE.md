@@ -86,6 +86,26 @@ cd ../ui && pnpm publish --access public
 cd ../cli && pnpm publish --access public
 ```
 
+### GitHub Actions (recommended)
+
+Use the workflow: `.github/workflows/release.yml`
+
+- Trigger: **Actions → Release → Run workflow**
+- Inputs:
+  - `dry_run` (default `true`)
+  - `npm_tag` (default `latest`)
+  - `create_git_tag` (default `true`)
+
+Required repository secret:
+
+- `NPM_TOKEN` — npm automation token with publish permission
+
+The workflow runs:
+
+1. `pnpm release:check`
+2. publish in order: `@agent-lens/server` → `@agent-lens/ui` → `agent-lens`
+3. optional git tag creation: `vX.Y.Z`
+
 ---
 
 ## 5) Post-publish verification
