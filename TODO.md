@@ -33,6 +33,14 @@
 
 ---
 
+## Refactor roadmap (architecture + maintainability)
+
+- [x] Create refactor master plan (`docs/REFACTOR_PLAN.md`)
+- [ ] Phase 1: server decomposition (`index.ts` -> config/db/routes/services split)
+- [ ] Phase 2: CLI decomposition (`index.ts` -> command/config/runtime/launcher split)
+- [ ] Phase 3: UI decomposition (`App.tsx` -> feature modules + hooks)
+- [ ] Phase 4: tests and quality guardrails for extracted modules
+
 ## M2 · Agent context mapping
 
 - [ ] Link traces to chat/session context
