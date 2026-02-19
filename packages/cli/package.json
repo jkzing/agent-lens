@@ -1,6 +1,6 @@
 {
   "name": "@agent-lens/cli",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "TS-native AI Agent observability toolkit — zero-config local OTEL receiver and UI for AI agents",
   "type": "module",
   "bin": {
