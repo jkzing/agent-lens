@@ -1,5 +1,6 @@
 import type { Hono } from 'hono';
-import { getPagination, normalizeBigInts } from '../services/lib.js';
+import { normalizeBigInts } from '../lib/bigint.js';
+import { getPagination } from '../lib/pagination.js';
 import { exportTrace, getTraceDetail, listTraces } from '../services/traces.js';
 import type { RouteDeps } from './types.js';
 

@@ -6,6 +6,7 @@ test('validateConfig returns error when root is invalid', () => {
   const result = validateConfig(null, 'config.toml');
   assert.deepEqual(result.config, {});
   assert.deepEqual(result.errors, ['config.toml must be an object']);
+  assert.deepEqual(result.warnings, []);
 });
 
 test('validateConfig normalizes valid values', () => {
@@ -18,6 +19,7 @@ test('validateConfig normalizes valid values', () => {
   );
 
   assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
   assert.deepEqual(result.config, {
     server: { port: 4318, dataDir: '/tmp/data' },
     ui: { open: false }
@@ -37,5 +39,24 @@ test('validateConfig reports nested type errors', () => {
     'config.json.server.port must be a number',
     'config.json.server.dataDir must be a non-empty string',
     'config.json.ui.open must be a boolean'
+  ]);
+  assert.deepEqual(result.warnings, []);
+});
+
+test('validateConfig reports unknown keys as warnings', () => {
+  const result = validateConfig(
+    {
+      extra: true,
+      server: { port: 4318, unknownServerKey: 'x' },
+      ui: { open: true, unknownUiKey: false }
+    },
+    'config.toml'
+  );
+
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, [
+    'config.toml.extra is unknown and will be ignored',
+    'config.toml.server.unknownServerKey is unknown and will be ignored',
+    'config.toml.ui.unknownUiKey is unknown and will be ignored'
   ]);
 });

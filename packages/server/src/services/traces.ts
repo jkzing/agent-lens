@@ -7,7 +7,8 @@ import {
   listTraceSpansPage,
   listTracesPageBase
 } from '../repositories/tracesRepo.js';
-import { csvEscape, parseJson, toNumber } from './lib.js';
+import { csvEscape } from '../lib/csv.js';
+import { parseJson, toNumber } from '../lib/json.js';
 
 export function listTraces(db: DatabaseSync, limit: number, offset: number) {
   const items = listTracesPageBase(db, limit, offset);
