@@ -2,27 +2,16 @@
 import { Command } from 'commander';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '../../..');
 
-function run(command: string, args: string[], options: { env?: NodeJS.ProcessEnv } = {}) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: repoRoot,
-      stdio: 'inherit',
-      shell: true,
-      env: { ...process.env, ...options.env }
-    });
-
-    child.on('exit', (code) => {
-      if (code === 0) return resolve();
-      reject(new Error(`${command} ${args.join(' ')} exited with ${code}`));
-    });
-  });
-}
+// After `npm install`:  dist/index.js  server-dist/index.js  ui-dist/
+// Both server-dist and ui-dist are siblings of dist/ inside the CLI package.
+const serverEntry = path.resolve(__dirname, '../server-dist/index.js');
+const uiDist     = path.resolve(__dirname, '../ui-dist');
 
 function openBrowser(url: string) {
   const platform = process.platform;
@@ -42,29 +31,27 @@ async function main() {
 
   program
     .name('agent-lens')
-    .description('Run agent-lens (build UI + serve API/UI)')
+    .description('Zero-config local OTEL receiver and UI for AI agent observability')
     .option('-p, --port <number>', 'server port', '4318')
     .option('--no-open', 'disable auto-open browser')
     .action(async (opts) => {
       const port = String(opts.port || '4318');
-      const uiDist = path.join(repoRoot, 'packages/ui/dist');
 
-      console.log('[agent-lens/cli] building ui...');
-      await run('pnpm', ['--filter', '@agent-lens/ui', 'build']);
+      if (!fs.existsSync(serverEntry)) {
+        console.error(`[agent-lens] server not found at: ${serverEntry}`);
+        console.error('[agent-lens] if running from source, run "pnpm prepack" first');
+        process.exit(1);
+      }
 
-      console.log('[agent-lens/cli] building server...');
-      await run('pnpm', ['--filter', '@agent-lens/server', 'build']);
+      console.log(`[agent-lens] starting on http://localhost:${port}`);
 
-      console.log('[agent-lens/cli] starting server...');
-      const server = spawn('pnpm', ['--filter', '@agent-lens/server', 'start'], {
-        cwd: repoRoot,
+      const server = spawn(process.execPath, [serverEntry], {
         stdio: 'inherit',
-        shell: true,
         env: {
           ...process.env,
           PORT: port,
-          UI_DIST: uiDist
-        }
+          UI_DIST: uiDist,
+        },
       });
 
       const url = `http://localhost:${port}`;
@@ -88,6 +75,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[agent-lens/cli] failed:', err.message);
+  console.error('[agent-lens] error:', err.message);
   process.exit(1);
 });

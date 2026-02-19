@@ -1,5 +1,8 @@
 node_modules
 **/node_modules
 **/dist
+packages/cli/server-dist
+packages/cli/ui-dist
+packages/cli/README.md
 packages/server/data/*.db
 .DS_Store

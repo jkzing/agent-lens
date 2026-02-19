@@ -1,20 +1,55 @@
 {
-  "name": "@agent-lens/cli",
+  "name": "agent-lens",
   "version": "0.1.0",
-  "private": true,
+  "description": "TS-native AI Agent observability toolkit — zero-config local OTEL receiver and UI for AI agents",
   "type": "module",
   "bin": {
     "agent-lens": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "server-dist",
+    "ui-dist",
+    "README.md"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "node scripts/prepack.mjs"
   },
   "dependencies": {
-    "commander": "^14.0.0"
+    "@hono/node-server": "^1.14.4",
+    "@opentelemetry/otlp-transformer": "^0.212.0",
+    "better-sqlite3": "^11.10.0",
+    "commander": "^14.0.0",
+    "hono": "^4.8.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.3.0"
+  },
+  "keywords": [
+    "agent",
+    "observability",
+    "opentelemetry",
+    "otel",
+    "tracing",
+    "ai",
+    "llm",
+    "debug"
+  ],
+  "author": "jkzing",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jkzing/agent-lens.git"
+  },
+  "homepage": "https://github.com/jkzing/agent-lens#readme",
+  "bugs": {
+    "url": "https://github.com/jkzing/agent-lens/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
