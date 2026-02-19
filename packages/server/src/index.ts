@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
 import { Hono, type Context } from 'hono';
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import { decodeOtlpProtobufTraceRequest, extractSpans, type ParsedSpan } from './otlp.js';
@@ -14,7 +14,7 @@ const dataDir = path.resolve(process.cwd(), 'data');
 fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = path.join(dataDir, 'agent-lens.db');
-const db = new Database(dbPath);
+const db = new DatabaseSync(dbPath, { readBigInts: true });
 
 const uiDistPath = path.resolve(process.env.UI_DIST ?? path.join(process.cwd(), '../ui/dist'));
 const hasUiDist = fs.existsSync(path.join(uiDistPath, 'index.html'));
@@ -145,8 +145,9 @@ app.post('/v1/traces', async (c) => {
     return otlpExportResponse(c, 0, 'No valid spans found in payload');
   }
 
-  const tx = db.transaction((rows: ParsedSpan[]) => {
-    for (const row of rows) {
+  try {
+    db.exec('BEGIN');
+    for (const row of parsedSpans) {
       insertSpan.run(
         receivedAt,
         row.traceId || null,
@@ -165,9 +166,11 @@ app.post('/v1/traces', async (c) => {
         payload
       );
     }
-  });
-
-  tx(parsedSpans);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 
   return otlpExportResponse(c);
 });
@@ -195,7 +198,7 @@ app.get('/api/spans', (c) => {
     )
     .all(limit, offset);
 
-  return c.json({ ok: true, items: rows, pagination: { offset, limit } });
+  return c.json(normalizeBigInts({ ok: true, items: rows, pagination: { offset, limit } }));
 });
 
 function parseJson(input: string | null): Record<string, any> {
@@ -211,6 +214,24 @@ function parseJson(input: string | null): Record<string, any> {
 function toNumber(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeBigInts<T>(value: T): T {
+  if (typeof value === 'bigint') {
+    return Number(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeBigInts(item)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, normalizeBigInts(v)])
+    ) as T;
+  }
+
+  return value;
 }
 
 function csvEscape(value: unknown): string {
@@ -318,11 +339,13 @@ app.get('/api/traces', (c) => {
     )
     .get() as { total: number };
 
-  return c.json({
-    ok: true,
-    items: enrichedItems,
-    pagination: { offset, limit, total: totalRow.total }
-  });
+  return c.json(
+    normalizeBigInts({
+      ok: true,
+      items: enrichedItems,
+      pagination: { offset, limit, total: totalRow.total }
+    })
+  );
 });
 
 app.get('/api/traces/:traceId/export', (c) => {
@@ -365,7 +388,7 @@ app.get('/api/traces/:traceId/export', (c) => {
 
   c.header('Content-Type', 'application/json; charset=utf-8');
   c.header('Content-Disposition', `attachment; filename="trace-${traceId}.json"`);
-  return c.json({ ok: true, traceId, items: rows });
+  return c.json(normalizeBigInts({ ok: true, traceId, items: rows }));
 });
 
 app.get('/api/traces/:traceId', (c) => {
@@ -443,12 +466,14 @@ app.get('/api/traces/:traceId', (c) => {
     };
   });
 
-  return c.json({
-    ok: true,
-    traceId,
-    items,
-    pagination: { offset, limit, total: totalRow.total }
-  });
+  return c.json(
+    normalizeBigInts({
+      ok: true,
+      traceId,
+      items,
+      pagination: { offset, limit, total: totalRow.total }
+    })
+  );
 });
 
 if (hasUiDist) {
