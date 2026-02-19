@@ -38,8 +38,9 @@ pnpm typecheck
 If the change touches publish/packaging flow, also run:
 
 ```bash
-cd packages/cli && npm pack --dry-run
-cd ../server && npm pack --dry-run
+cd packages/server && pnpm pack && rm -f *.tgz
+cd ../ui && pnpm pack && rm -f *.tgz
+cd ../cli && pnpm pack && rm -f *.tgz
 ```
 
 ### 4) Commit conventions

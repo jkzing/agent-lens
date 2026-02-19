@@ -1,51 +1,56 @@
 # agent-lens
 
-TS-native AI Agent 调试 / 可观测工具（本地零配置）。
+A TS-native observability toolkit for AI agents.
 
-## Monorepo 结构
+`agent-lens` provides a local OTLP trace receiver, timeline UI, and debugging views for agent workflows.
 
-- `packages/server`：Hono OTEL 接收端 + SQLite 存储 + 静态服务 UI
-- `packages/ui`：React + Rsbuild 前端
-- `packages/cli`：`agent-lens` 命令入口
+## Monorepo packages
 
-## 快速开始
+- `packages/server` — `@agent-lens/server` (OTLP receiver + SQLite + API)
+- `packages/ui` — `@agent-lens/ui` (React UI)
+- `packages/cli` — `agent-lens` (CLI entrypoint)
 
-### 方式 A：本地开发
+## Local development
 
 ```bash
 cd ~/w/gh/jkzing/agent-lens
 pnpm install
-pnpm --filter @agent-lens/cli dev --port 4318
 ```
 
-### 方式 B：零配置（发布后）
+Run server + UI in two terminals:
+
+```bash
+# terminal A
+pnpm --filter @agent-lens/server dev
+
+# terminal B
+pnpm --filter @agent-lens/ui dev
+```
+
+- server: `http://localhost:4318`
+- UI dev: `http://localhost:5173` (auto-fallback to next port if occupied)
+
+## Published usage
 
 ```bash
 npx agent-lens --port 4318
 ```
 
-命令行为：
+CLI options:
 
-1. 自动 build UI（`packages/ui/dist`）
-2. build server
-3. 启动 server 并静态托管 UI
-4. 默认自动打开浏览器（可用 `--no-open` 关闭）
+- `--port <number>` (default `4318`)
+- `--no-open`
 
-## CLI 参数
+## API endpoints
 
-- `--port <number>`：指定 server 端口（默认 `4318`）
-- `--no-open`：启动后不自动打开浏览器
+- `POST /v1/traces` — OTLP traces (protobuf/json)
+- `GET /api/traces` — trace summary list
+- `GET /api/traces/:traceId` — spans for a trace
+- `GET /api/spans` — raw span list
 
-## API
+## OpenClaw integration
 
-- `POST /v1/traces` 接收 OTEL payload（JSON / protobuf）
-- `GET /api/traces` trace 聚合列表
-- `GET /api/traces/:traceId` trace 详情 spans
-- `GET /api/spans` spans 列表
-
-## OpenClaw 集成
-
-在 OpenClaw 配置中设置：
+In OpenClaw config:
 
 ```json
 {
@@ -57,14 +62,19 @@ npx agent-lens --port 4318
 }
 ```
 
-然后重启 OpenClaw，使 OTEL trace 导入 agent-lens。
+Then restart OpenClaw and trigger a few agent turns.
 
-验证步骤：
+## Release process
 
-1. 启动 agent-lens：`pnpm dev -- --port 4318`
-2. 触发一轮 OpenClaw 对话（产生 spans）
-3. 打开 `http://localhost:4318`，确认 trace 列表和 timeline 正常展示
+See: [`docs/RELEASE.md`](docs/RELEASE.md)
+
+It includes:
+
+- version bump rules
+- build/typecheck gates
+- `pnpm pack` dry-run checks
+- npm publish order (`server` → `ui` → `cli`)
 
 ## Demo
 
-- UI 截图：`docs/demo.png`
+- `docs/demo.png`
