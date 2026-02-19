@@ -12,6 +12,14 @@ import {
 import { formatConfigOutput } from '../output/format.js';
 import { resolveRuntimeConfig } from '../runtime/resolve.js';
 
+function printWarnings(warnings: string[]): void {
+  if (warnings.length === 0) return;
+  console.error('[agent-lens] config warnings:');
+  for (const msg of warnings) {
+    console.error(`  - ${msg}`);
+  }
+}
+
 export function registerConfigCommand(program: Command): void {
   const configCmd = program.command('config').description('manage agent-lens config file');
 
@@ -54,6 +62,7 @@ export function registerConfigCommand(program: Command): void {
           }
           process.exit(1);
         }
+        printWarnings(result.warnings);
         console.log(`[agent-lens] config is valid: ${configPath}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -80,6 +89,7 @@ export function registerConfigCommand(program: Command): void {
       }
 
       const loaded = loadConfig(typeof mergedOpts.config === 'string' ? mergedOpts.config : undefined);
+      printWarnings(loaded.warnings);
       const runtime = resolveRuntimeConfig(program, mergedOpts, loaded);
 
       console.log(formatConfigOutput(runtime, format));

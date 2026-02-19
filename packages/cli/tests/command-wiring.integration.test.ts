@@ -116,3 +116,53 @@ test('agent-lens config print shows CLI override precedence over config values',
     open: 'cli'
   });
 });
+
+test('agent-lens config validate shows unknown-key warnings but exits success', () => {
+  const home = makeHome();
+  const configDir = path.join(home, '.agent-lens');
+  const configPath = path.join(configDir, 'config.toml');
+
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(
+    configPath,
+    [
+      'extraTopLevel = 1',
+      '',
+      '[server]',
+      'port = 4318',
+      'extraServer = "x"',
+      '',
+      '[ui]',
+      'open = true',
+      'extraUi = false',
+      ''
+    ].join('\n'),
+    'utf8'
+  );
+
+  const result = runCli(['config', 'validate'], home);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /config warnings/);
+  assert.match(result.stderr, /extraTopLevel is unknown and will be ignored/);
+  assert.match(result.stderr, /server\.extraServer is unknown and will be ignored/);
+  assert.match(result.stderr, /ui\.extraUi is unknown and will be ignored/);
+  assert.match(result.stdout, /config is valid/);
+});
+
+test('agent-lens config print shows unknown-key warnings to stderr', () => {
+  const home = makeHome();
+  const configDir = path.join(home, '.agent-lens');
+  const configPath = path.join(configDir, 'config.toml');
+
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(configPath, '[server]\nport = 4318\nextraServer = "x"\n', 'utf8');
+
+  const result = runCli(['config', 'print'], home);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /config warnings/);
+  assert.match(result.stderr, /server\.extraServer is unknown and will be ignored/);
+  const payload = JSON.parse(result.stdout) as Record<string, unknown>;
+  assert.equal(payload.port, 4318);
+});
