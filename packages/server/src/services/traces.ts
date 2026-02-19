@@ -1,54 +1,22 @@
 import type { DatabaseSync } from 'node:sqlite';
+import {
+  countTraceSpans,
+  countTraces,
+  listSpanStatsByTraceIds,
+  listTraceSpansForExport,
+  listTraceSpansPage,
+  listTracesPageBase
+} from '../repositories/tracesRepo.js';
 import { csvEscape, parseJson, toNumber } from './lib.js';
 
 export function listTraces(db: DatabaseSync, limit: number, offset: number) {
-  const items = db
-    .prepare(
-      `WITH trace_base AS (
-         SELECT
-           trace_id,
-           COUNT(*) AS span_count,
-           MIN(CAST(start_time_unix_nano AS INTEGER)) AS start_ns,
-           MAX(CAST(end_time_unix_nano AS INTEGER)) AS end_ns,
-           MIN(received_at) AS first_received_at,
-           MAX(received_at) AS last_received_at
-         FROM spans
-         WHERE trace_id IS NOT NULL AND trace_id != ''
-         GROUP BY trace_id
-       )
-       SELECT
-         tb.trace_id,
-         tb.span_count,
-         CASE
-           WHEN tb.start_ns IS NOT NULL AND tb.end_ns IS NOT NULL AND tb.end_ns >= tb.start_ns THEN tb.end_ns - tb.start_ns
-           ELSE NULL
-         END AS duration_ns,
-         COALESCE((
-           SELECT s.name
-           FROM spans s
-           WHERE s.trace_id = tb.trace_id
-             AND (s.parent_span_id IS NULL OR s.parent_span_id = '')
-           ORDER BY CAST(s.start_time_unix_nano AS INTEGER) ASC, s.id ASC
-           LIMIT 1
-         ), '(unknown root)') AS root_span_name,
-         tb.start_ns,
-         tb.end_ns,
-         tb.first_received_at,
-         tb.last_received_at
-       FROM trace_base tb
-       ORDER BY tb.last_received_at DESC
-       LIMIT ? OFFSET ?`
-    )
-    .all(limit, offset);
+  const items = listTracesPageBase(db, limit, offset);
 
   const traceIds = (items as Array<any>).map((item) => item.trace_id).filter(Boolean);
   const statsByTrace = new Map<string, { inputTokens: number; outputTokens: number; serviceNames: Set<string> }>();
 
   if (traceIds.length > 0) {
-    const placeholders = traceIds.map(() => '?').join(',');
-    const spanRows = db
-      .prepare(`SELECT trace_id, attributes, resource_attributes FROM spans WHERE trace_id IN (${placeholders})`)
-      .all(...traceIds) as Array<{ trace_id: string; attributes: string | null; resource_attributes: string | null }>;
+    const spanRows = listSpanStatsByTraceIds(db, traceIds);
 
     for (const row of spanRows) {
       const bucket =
@@ -84,17 +52,7 @@ export function listTraces(db: DatabaseSync, limit: number, offset: number) {
     };
   });
 
-  const totalRow = db
-    .prepare(
-      `SELECT COUNT(*) AS total
-       FROM (
-         SELECT trace_id
-         FROM spans
-         WHERE trace_id IS NOT NULL AND trace_id != ''
-         GROUP BY trace_id
-       ) t`
-    )
-    .get() as { total: number };
+  const totalRow = countTraces(db);
 
   return {
     items: enrichedItems,
@@ -103,18 +61,9 @@ export function listTraces(db: DatabaseSync, limit: number, offset: number) {
 }
 
 export function getTraceDetail(db: DatabaseSync, traceId: string, limit: number, offset: number) {
-  const rows = db
-    .prepare(
-      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
-              attributes, status_code, status, resource_attributes, events
-       FROM spans
-       WHERE trace_id = ?
-       ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC
-       LIMIT ? OFFSET ?`
-    )
-    .all(traceId, limit, offset) as Array<any>;
+  const rows = listTraceSpansPage(db, traceId, limit, offset) as Array<any>;
 
-  const totalRow = db.prepare('SELECT COUNT(*) AS total FROM spans WHERE trace_id = ?').get(traceId) as { total: number };
+  const totalRow = countTraceSpans(db, traceId);
 
   const bySpanId = new Map<string, (typeof rows)[number]>();
   rows.forEach((row) => {
@@ -156,15 +105,7 @@ export function getTraceDetail(db: DatabaseSync, traceId: string, limit: number,
 }
 
 export function exportTrace(db: DatabaseSync, traceId: string, format: string) {
-  const rows = db
-    .prepare(
-      `SELECT id, received_at, trace_id, span_id, parent_span_id, name, kind, start_time_unix_nano, end_time_unix_nano, duration_ns,
-              attributes, status_code, status, resource_attributes, events
-       FROM spans
-       WHERE trace_id = ?
-       ORDER BY CAST(start_time_unix_nano AS INTEGER) ASC, id ASC`
-    )
-    .all(traceId);
+  const rows = listTraceSpansForExport(db, traceId);
 
   if (format === 'csv') {
     const header = ['trace_id', 'span_id', 'parent_span_id', 'name', 'start', 'end', 'duration', 'status_code'];
