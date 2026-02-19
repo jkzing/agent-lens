@@ -25,8 +25,9 @@
 - [x] Runtime merge priority (`CLI > config > defaults`)
 - [x] `agent-lens config init` and `agent-lens config validate`
 - [x] Server `DATA_DIR` env support
-- [ ] Add `agent-lens config print` for resolved runtime config
+- [x] Add `agent-lens config print` for resolved runtime config
 - [ ] Extend schema validation (unknown key warnings, richer diagnostics)
+- [ ] Add optional `--show-sources/--no-sources` toggle for `config print` output verbosity
 - [ ] Add unit tests for config parser/validator
 - [ ] Support environment variable interpolation in config values
 

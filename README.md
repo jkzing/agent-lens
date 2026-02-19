@@ -81,6 +81,14 @@ agent-lens config validate
 agent-lens config validate --config ~/.agent-lens/config.toml
 ```
 
+Print resolved runtime config (without starting server):
+
+```bash
+agent-lens config print
+agent-lens config print --format toml
+agent-lens config print --config ~/.agent-lens/config.toml --port 5321 --no-open
+```
+
 Run with explicit config path:
 
 ```bash

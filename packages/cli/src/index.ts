@@ -23,6 +23,17 @@ type RuntimeOptions = {
   open: boolean;
 };
 
+type ResolvedConfigSource = 'cli' | 'config' | 'default';
+
+type ResolvedRuntimeConfig = RuntimeOptions & {
+  configPath: string | null;
+  sources: {
+    port: ResolvedConfigSource;
+    dataDir: ResolvedConfigSource;
+    open: ResolvedConfigSource;
+  };
+};
+
 const require = createRequire(import.meta.url);
 const serverEntry = require.resolve('@agent-lens/server');
 const uiPackageJson = require.resolve('@agent-lens/ui/package.json');
@@ -150,25 +161,39 @@ function loadConfig(explicitPath?: string): { path: string | null; config: LensC
   return { path: configPath, config };
 }
 
-function buildRuntimeOptions(program: Command, opts: Record<string, unknown>, config: LensConfig): RuntimeOptions {
-  const portSource = program.getOptionValueSource('port');
-  const dataDirSource = program.getOptionValueSource('dataDir');
-  const openSource = program.getOptionValueSource('open');
+function sourceFor(isCli: boolean, hasConfig: boolean): ResolvedConfigSource {
+  if (isCli) return 'cli';
+  if (hasConfig) return 'config';
+  return 'default';
+}
+
+function resolveRuntimeConfig(
+  cmd: Command,
+  opts: Record<string, unknown>,
+  loaded: { path: string | null; config: LensConfig }
+): ResolvedRuntimeConfig {
+  const portSource = cmd.getOptionValueSource('port');
+  const dataDirSource = cmd.getOptionValueSource('dataDir');
+  const openSource = cmd.getOptionValueSource('open');
+
+  const hasConfigPort = typeof loaded.config.server?.port === 'number';
+  const hasConfigDataDir = typeof loaded.config.server?.dataDir === 'string';
+  const hasConfigOpen = typeof loaded.config.ui?.open === 'boolean';
 
   const resolvedPort =
     portSource === 'cli'
       ? Number(opts.port)
-      : config.server?.port ?? DEFAULTS.port;
+      : loaded.config.server?.port ?? DEFAULTS.port;
 
   const resolvedDataDir =
     dataDirSource === 'cli'
       ? String(opts.dataDir)
-      : config.server?.dataDir ?? DEFAULTS.dataDir;
+      : loaded.config.server?.dataDir ?? DEFAULTS.dataDir;
 
   const resolvedOpen =
     openSource === 'cli'
       ? opts.open !== false
-      : config.ui?.open ?? DEFAULTS.open;
+      : loaded.config.ui?.open ?? DEFAULTS.open;
 
   if (!Number.isFinite(resolvedPort) || resolvedPort <= 0) {
     throw new Error(`Invalid port: ${String(resolvedPort)}`);
@@ -177,8 +202,29 @@ function buildRuntimeOptions(program: Command, opts: Record<string, unknown>, co
   return {
     port: Math.trunc(resolvedPort),
     dataDir: path.resolve(process.cwd(), resolvedDataDir),
-    open: resolvedOpen
+    open: resolvedOpen,
+    configPath: loaded.path,
+    sources: {
+      port: sourceFor(portSource === 'cli', hasConfigPort),
+      dataDir: sourceFor(dataDirSource === 'cli', hasConfigDataDir),
+      open: sourceFor(openSource === 'cli', hasConfigOpen)
+    }
   };
+}
+
+function formatConfigOutput(runtime: ResolvedRuntimeConfig, format: string): string {
+  if (format === 'toml') {
+    const tomlPayload = {
+      port: runtime.port,
+      dataDir: runtime.dataDir,
+      open: runtime.open,
+      configPath: runtime.configPath ?? 'null',
+      sources: runtime.sources
+    };
+    return TOML.stringify(tomlPayload).trimEnd();
+  }
+
+  return JSON.stringify(runtime, null, 2);
 }
 
 async function main() {
@@ -193,7 +239,7 @@ async function main() {
     .option('--no-open', 'disable auto-open browser')
     .action(async (opts) => {
       const loaded = loadConfig(typeof opts.config === 'string' ? opts.config : undefined);
-      const runtime = buildRuntimeOptions(program, opts as Record<string, unknown>, loaded.config);
+      const runtime = resolveRuntimeConfig(program, opts as Record<string, unknown>, loaded);
       const port = String(runtime.port);
 
       if (!fs.existsSync(serverEntry)) {
@@ -282,6 +328,27 @@ async function main() {
         console.error(`[agent-lens] failed to validate config: ${message}`);
         process.exit(1);
       }
+    });
+
+  configCmd
+    .command('print')
+    .description('print resolved runtime config (without starting server)')
+    .option('-p, --port <number>', 'server port override')
+    .option('--data-dir <path>', 'data directory path override')
+    .option('--config <path>', 'path to config file (default: auto-discovery)')
+    .option('--no-open', 'disable auto-open browser')
+    .option('--format <format>', 'output format: json|toml', 'json')
+    .action((opts, cmd) => {
+      const format = String(opts.format ?? 'json').toLowerCase();
+      if (format !== 'json' && format !== 'toml') {
+        console.error(`[agent-lens] unsupported format: ${format} (expected json|toml)`);
+        process.exit(1);
+      }
+
+      const loaded = loadConfig(typeof opts.config === 'string' ? opts.config : undefined);
+      const runtime = resolveRuntimeConfig(cmd, opts as Record<string, unknown>, loaded);
+
+      console.log(formatConfigOutput(runtime, format));
     });
 
   await program.parseAsync(process.argv);
