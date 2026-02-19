@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,40 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AlertTriangle, Bot, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Reply, Send, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
-
-type TraceSummary = {
-  trace_id: string;
-  span_count: number;
-  duration_ns: number | null;
-  root_span_name: string;
-  start_ns: number | null;
-  end_ns: number | null;
-  first_received_at: string;
-  last_received_at: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  service_names?: string[];
-  primary_service_name?: string;
-};
-
-type SpanRow = {
-  id: number;
-  received_at: string;
-  trace_id: string;
-  span_id: string | null;
-  parent_span_id: string | null;
-  name: string | null;
-  kind: number | null;
-  start_time_unix_nano: string | null;
-  end_time_unix_nano: string | null;
-  duration_ns: number | null;
-  attributes: string | null;
-  status_code: number | null;
-  resource_attributes: string | null;
-  events: string | null;
-  has_parent: boolean;
-  depth: number;
-};
+import { useTraceData, type SpanRow, type TraceSummary } from '@/hooks/useTraceData';
+import { TraceListPanel } from '@/features/traces/TraceListPanel';
 
 type SpanKindType = 'llm' | 'tool' | 'internal';
 
@@ -424,12 +392,6 @@ function createMockScenario(baseIso: string, rows: Array<{
 }
 
 export default function App() {
-  const [traces, setTraces] = useState<TraceSummary[]>([]);
-  const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null);
-  const [spans, setSpans] = useState<SpanRow[]>([]);
-  const [selectedSpanId, setSelectedSpanId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
@@ -444,72 +406,22 @@ export default function App() {
   const [overviewTimeFilter, setOverviewTimeFilter] = useState<'all' | '5m' | '1h' | '24h'>('all');
   const [overviewDataMode, setOverviewDataMode] = useState<'live' | 'demo-happy' | 'demo-handoff' | 'demo-recovery'>('live');
 
-  const loadTraces = useCallback(async () => {
-    const res = await fetch('/api/traces?limit=200&offset=0');
-    if (!res.ok) throw new Error(`Load traces failed: ${res.status}`);
-    const data = await res.json();
-    const items = (Array.isArray(data.items) ? data.items : []) as TraceSummary[];
-    setTraces(items);
-    return items;
-  }, []);
-
-  const loadTraceDetail = useCallback(async (traceId: string) => {
-    const res = await fetch(`/api/traces/${encodeURIComponent(traceId)}?limit=500&offset=0`);
-    if (!res.ok) throw new Error(`Load trace detail failed: ${res.status}`);
-    const data = await res.json();
-    const items = (Array.isArray(data.items) ? data.items : []) as SpanRow[];
-    setSpans(items);
-    setSelectedSpanId((prev) => (prev != null && items.some((item) => item.id === prev) ? prev : (items[0]?.id ?? null)));
-  }, []);
-
-  const refreshAll = useCallback(
-    async (traceIdToKeep: string | null) => {
-      setError(null);
-      const items = await loadTraces();
-
-      const nextTraceId = traceIdToKeep && items.some((t) => t.trace_id === traceIdToKeep)
-        ? traceIdToKeep
-        : (items[0]?.trace_id ?? null);
-
-      setSelectedTraceId(nextTraceId);
-
-      if (nextTraceId) {
-        await loadTraceDetail(nextTraceId);
-      } else {
-        setSpans([]);
-        setSelectedSpanId(null);
-      }
-    },
-    [loadTraceDetail, loadTraces]
-  );
-
-  useEffect(() => {
-    refreshAll(null)
-      .catch((err: Error) => setError(err.message || 'Failed to load traces'))
-      .finally(() => setLoading(false));
-  }, [refreshAll]);
-
-  useEffect(() => {
-    if (!selectedTraceId) {
-      setSpans([]);
-      setSelectedSpanId(null);
-      return;
-    }
-
-    loadTraceDetail(selectedTraceId).catch((err: Error) => setError(err.message || 'Failed to load trace detail'));
-  }, [selectedTraceId]);
+  const {
+    traces,
+    selectedTraceId,
+    setSelectedTraceId,
+    spans,
+    selectedSpanId,
+    setSelectedSpanId,
+    loading,
+    error,
+    setError,
+    refreshAll
+  } = useTraceData(autoRefresh);
 
   useEffect(() => {
     setSpanSearch('');
   }, [selectedTraceId]);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const timer = setInterval(() => {
-      refreshAll(selectedTraceId).catch(() => {});
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [autoRefresh, refreshAll, selectedTraceId]);
 
   const agentOptions = useMemo(() => {
     const set = new Set<string>();
@@ -547,8 +459,6 @@ export default function App() {
     if (filteredTraces.length === 0) {
       if (selectedTraceId !== null) {
         setSelectedTraceId(null);
-        setSpans([]);
-        setSelectedSpanId(null);
       }
       return;
     }
@@ -1052,50 +962,17 @@ export default function App() {
             )}
           >
             {!tracesCollapsed ? (
-              <aside className="rounded-xl border border-border bg-card p-4">
-                  <div className="mb-3 flex h-9 items-center">
-                    <h2 className="text-lg font-semibold">Traces ({filteredTraces.length})</h2>
-                  </div>
-                  <Input value={traceSearch} onChange={(e) => setTraceSearch(e.target.value)} placeholder="Search root span name..." className="mb-3" />
-                  {loading ? <p className="text-sm text-muted-foreground">Loading traces...</p> : null}
-
-                  <ScrollArea className="h-[calc(100vh-250px)] pr-2">
-                    <div className="space-y-3">
-                      {Object.entries(tracesByAgent).map(([agent, agentTraces]) => (
-                        <div key={agent}>
-                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{agent}</div>
-                          <div className="space-y-2">
-                            {agentTraces.map((trace) => {
-                              const inputTokens = toNumber(trace.input_tokens);
-                              const outputTokens = toNumber(trace.output_tokens);
-
-                              return (
-                                <button
-                                  key={trace.trace_id}
-                                  className={cn(
-                                    'w-full rounded-lg border p-3 text-left transition',
-                                    trace.trace_id === selectedTraceId
-                                      ? 'border-primary bg-primary/10'
-                                      : 'border-border bg-background/40 hover:border-ring/60'
-                                  )}
-                                  onClick={() => setSelectedTraceId(trace.trace_id)}
-                                >
-                                  <div className="mb-1 flex items-center justify-between gap-2">
-                                    <strong className="line-clamp-1 text-sm">{trace.root_span_name || '(unknown root)'}</strong>
-                                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-foreground">{trace.span_count} spans</span>
-                                  </div>
-                                  <div className="font-mono text-xs text-muted-foreground">duration: {formatDurationNs(trace.duration_ns)}</div>
-                                  <div className="font-mono text-xs text-muted-foreground">tokens: in {inputTokens} / out {outputTokens}</div>
-                                  <div className="font-mono text-xs text-muted-foreground">time: {new Date(trace.last_received_at).toLocaleString()}</div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-              </aside>
+              <TraceListPanel
+                filteredTraces={filteredTraces}
+                tracesByAgent={tracesByAgent}
+                loading={loading}
+                traceSearch={traceSearch}
+                setTraceSearch={setTraceSearch}
+                selectedTraceId={selectedTraceId}
+                setSelectedTraceId={setSelectedTraceId}
+                formatDurationNs={formatDurationNs}
+                toNumber={toNumber}
+              />
             ) : null}
 
             <section
