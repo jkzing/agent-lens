@@ -109,12 +109,12 @@ jobs:
         run: |
           npm publish "/tmp/release-tarballs/agent-lens-ui-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
 
-      - name: Publish agent-lens CLI (Trusted Publishing)
+      - name: Publish @agent-lens/cli (Trusted Publishing)
         env:
           NPM_TAG: ${{ inputs.npm_tag }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          npm publish "/tmp/release-tarballs/agent-lens-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
+          npm publish "/tmp/release-tarballs/agent-lens-cli-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
 
   tag:
     name: Tag release

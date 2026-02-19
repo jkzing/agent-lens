@@ -8,7 +8,7 @@ A TS-native observability toolkit for AI agents.
 
 - `packages/server` — `@agent-lens/server` (OTLP receiver + SQLite + API)
 - `packages/ui` — `@agent-lens/ui` (React UI)
-- `packages/cli` — `agent-lens` (CLI entrypoint)
+- `packages/cli` — `@agent-lens/cli` (CLI entrypoint)
 
 ## Local development
 
@@ -33,8 +33,10 @@ pnpm --filter @agent-lens/ui dev
 ## Published usage
 
 ```bash
-npx agent-lens --port 4318
+npx @agent-lens/cli --port 4318
 ```
+
+> The executable command remains `agent-lens`.
 
 CLI options:
 

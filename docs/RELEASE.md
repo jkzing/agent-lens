@@ -5,7 +5,7 @@ This document defines the recommended release process for the `agent-lens` monor
 > Package publish order matters:
 > 1) `@agent-lens/server`
 > 2) `@agent-lens/ui`
-> 3) `agent-lens` (CLI)
+> 3) `@agent-lens/cli`
 
 ---
 
@@ -49,7 +49,7 @@ pnpm -r build
 
 Use **pnpm pack** for monorepo publishables.
 
-Why: `agent-lens` (CLI) depends on workspace packages; `pnpm pack` rewrites workspace deps to real versions in tarball metadata.
+Why: `@agent-lens/cli` depends on workspace packages; `pnpm pack` rewrites workspace deps to real versions in tarball metadata.
 
 ```bash
 cd packages/server && pnpm pack && rm -f *.tgz
@@ -62,7 +62,7 @@ Optional: inspect packed manifest for CLI dependency resolution:
 ```bash
 cd packages/cli
 pnpm pack
-TARBALL=$(ls -t agent-lens-*.tgz | head -1)
+TARBALL=$(ls -t agent-lens-cli-*.tgz | head -1)
 tar -xOf "$TARBALL" package/package.json
 rm -f "$TARBALL"
 ```
@@ -101,7 +101,7 @@ Trusted Publishing setup (npm):
 - Configure **Trusted Publisher** in npm for each package:
   - `@agent-lens/server`
   - `@agent-lens/ui`
-  - `agent-lens`
+  - `@agent-lens/cli`
 - Use this GitHub repository + workflow as trusted source
 - No `NPM_TOKEN` secret is required in this model
 
@@ -110,21 +110,21 @@ The workflow uses GitHub OIDC and runs:
 1. `pnpm release:check`
 2. pack artifacts with `pnpm pack`
 3. publish in order via `npm publish --provenance`:
-   - `@agent-lens/server` → `@agent-lens/ui` → `agent-lens`
+   - `@agent-lens/server` → `@agent-lens/ui` → `@agent-lens/cli`
 4. optional git tag creation: `vX.Y.Z`
 
 ---
 
 ## 5) Post-publish verification
 
-- `npx agent-lens --port 4318` starts successfully
+- `npx @agent-lens/cli --port 4318` starts successfully
 - UI loads and can receive traces
 - Install checks:
 
 ```bash
 npm view @agent-lens/server version
 npm view @agent-lens/ui version
-npm view agent-lens version
+npm view @agent-lens/cli version
 ```
 
 ---
