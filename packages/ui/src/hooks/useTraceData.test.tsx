@@ -1,18 +1,20 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from '@rstest/core';
 import { useTraceData } from './useTraceData';
 
 describe('useTraceData', () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
-    vi.restoreAllMocks();
+    // no-op
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
+    globalThis.fetch = originalFetch;
   });
 
   it('loads traces and selects first trace/span', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/traces?')) {
         return {
@@ -24,7 +26,7 @@ describe('useTraceData', () => {
         ok: true,
         json: async () => ({ items: [{ id: 11, received_at: new Date().toISOString(), trace_id: 't-1', span_id: 's-1', parent_span_id: null, name: 'root', kind: null, start_time_unix_nano: null, end_time_unix_nano: null, duration_ns: 10, attributes: null, status_code: null, resource_attributes: null, events: null, has_parent: false, depth: 0 }] })
       } as Response;
-    }));
+    }) as typeof fetch;
 
     const { result } = renderHook(() => useTraceData(false));
 
@@ -35,7 +37,7 @@ describe('useTraceData', () => {
   });
 
   it('surfaces load error when trace list request fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 500 }) as Response));
+    globalThis.fetch = (async () => ({ ok: false, status: 500 }) as Response) as typeof fetch;
 
     const { result } = renderHook(() => useTraceData(false));
 
@@ -45,7 +47,7 @@ describe('useTraceData', () => {
   });
 
   it('updates selected span when selecting another trace', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.startsWith('/api/traces?')) {
         return {
@@ -60,7 +62,7 @@ describe('useTraceData', () => {
         return { ok: true, json: async () => ({ items: [{ id: 101, received_at: new Date().toISOString(), trace_id: 't-1', span_id: 's-1', parent_span_id: null, name: 's1', kind: null, start_time_unix_nano: null, end_time_unix_nano: null, duration_ns: 1, attributes: null, status_code: null, resource_attributes: null, events: null, has_parent: false, depth: 0 }] }) } as Response;
       }
       return { ok: true, json: async () => ({ items: [{ id: 202, received_at: new Date().toISOString(), trace_id: 't-2', span_id: 's-2', parent_span_id: null, name: 's2', kind: null, start_time_unix_nano: null, end_time_unix_nano: null, duration_ns: 1, attributes: null, status_code: null, resource_attributes: null, events: null, has_parent: false, depth: 0 }] }) } as Response;
-    }));
+    }) as typeof fetch;
 
     const { result } = renderHook(() => useTraceData(false));
     await waitFor(() => expect(result.current.selectedSpanId).toBe(101));

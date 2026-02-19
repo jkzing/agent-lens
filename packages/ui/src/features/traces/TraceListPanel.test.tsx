@@ -1,10 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from '@rstest/core';
 import { TraceListPanel } from './TraceListPanel';
 
 describe('TraceListPanel', () => {
   it('renders grouped traces and propagates select', () => {
-    const onSelect = vi.fn();
+    const calls: string[] = [];
+    const onSelect = (traceId: string | null) => {
+      if (traceId) calls.push(traceId);
+    };
+
     render(
       <TraceListPanel
         filteredTraces={[
@@ -49,6 +53,6 @@ describe('TraceListPanel', () => {
     expect(screen.getByText('root span')).toBeTruthy();
 
     fireEvent.click(screen.getByText('root span'));
-    expect(onSelect).toHaveBeenCalledWith('trace-1');
+    expect(calls).toEqual(['trace-1']);
   });
 });

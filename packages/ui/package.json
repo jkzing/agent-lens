@@ -9,7 +9,7 @@
     "dev": "rsbuild dev --port 5173",
     "build": "rsbuild build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "rstest"
   },
   "dependencies": {
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -34,7 +34,8 @@
     "@types/react-dom": "^19.1.7",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",
-    "vitest": "^2.1.8",
+    "@rstest/adapter-rsbuild": "^0.2.0",
+    "@rstest/core": "^0.8.5",
     "jsdom": "^25.0.1",
     "@testing-library/react": "^16.1.0",
     "@testing-library/jest-dom": "^6.6.3"
