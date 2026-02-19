@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "pnpm --filter @agent-lens/server dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "release:check": "pnpm typecheck && pnpm -r build && (cd packages/server && pnpm pack && rm -f *.tgz) && (cd packages/ui && pnpm pack && rm -f *.tgz) && (cd packages/cli && pnpm pack && rm -f *.tgz)"
   },
   "devDependencies": {
     "node-gyp": "^12.2.0",
