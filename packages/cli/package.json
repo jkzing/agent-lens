@@ -19,6 +19,7 @@
   "dependencies": {
     "@agent-lens/server": "workspace:*",
     "@agent-lens/ui": "workspace:*",
+    "@iarna/toml": "^2.2.5",
     "commander": "^14.0.0"
   },
   "devDependencies": {
