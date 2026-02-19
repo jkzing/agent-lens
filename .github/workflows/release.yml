@@ -44,8 +44,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
+
+      - name: Verify Node/npm versions
+        run: |
+          node -v
+          npm -v
+          REQUIRED="11.5.1"
+          CURRENT="$(npm -v)"
+          if [ "$(printf '%s\n' "$REQUIRED" "$CURRENT" | sort -V | head -n1)" != "$REQUIRED" ]; then
+            echo "npm $CURRENT is lower than required $REQUIRED for Trusted Publishing"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -82,9 +93,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
+
+      - name: Verify Node/npm versions
+        run: |
+          node -v
+          npm -v
+          REQUIRED="11.5.1"
+          CURRENT="$(npm -v)"
+          if [ "$(printf '%s\n' "$REQUIRED" "$CURRENT" | sort -V | head -n1)" != "$REQUIRED" ]; then
+            echo "npm $CURRENT is lower than required $REQUIRED for Trusted Publishing"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

@@ -14,6 +14,7 @@ A TS-native observability toolkit for AI agents.
 
 ```bash
 cd ~/w/gh/jkzing/agent-lens
+nvm use    # or: fnm use
 pnpm install
 ```
 
