@@ -1138,7 +1138,7 @@ export default function App() {
                 </div>
 
                 {selectedTrace ? (
-                  <div className="mb-3 flex items-center gap-2">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
                     <Input
                       value={spanSearch}
                       onChange={(e) => setSpanSearch(e.target.value)}
@@ -1146,9 +1146,14 @@ export default function App() {
                       className="max-w-sm"
                     />
                     {spanSearch.trim() ? (
-                      <span className="text-xs text-muted-foreground">
-                        showing {filteredSpans.length}/{spans.length}
-                      </span>
+                      <>
+                        <span className="text-xs text-muted-foreground">
+                          showing {filteredSpans.length}/{spans.length}
+                        </span>
+                        <Button size="sm" variant="ghost" onClick={() => setSpanSearch('')}>
+                          Clear
+                        </Button>
+                      </>
                     ) : null}
                   </div>
                 ) : null}
@@ -1210,6 +1215,19 @@ export default function App() {
                     </div>
 
                     <div className="h-[calc(100vh-470px)] overflow-y-auto rounded border border-border bg-background/30">
+                      {filteredSpans.length === 0 ? (
+                        <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-3 p-6 text-center">
+                          <div className="text-sm font-medium">No spans match this filter</div>
+                          <div className="text-xs text-muted-foreground">
+                            Try another keyword or clear the current span filter.
+                          </div>
+                          {spanSearch.trim() ? (
+                            <Button size="sm" variant="secondary" onClick={() => setSpanSearch('')}>
+                              Clear span filter
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : (
                       <div className="flex min-w-0">
                         <div className="shrink-0 border-r border-border bg-background/40" style={{ width: `${nameColumnWidth}px` }}>
                           <div className="sticky top-0 z-20 flex items-center border-b border-border bg-background/80 px-3 text-xs font-medium text-muted-foreground backdrop-blur" style={{ height: `${timelineHeaderHeight}px` }}>
@@ -1229,7 +1247,7 @@ export default function App() {
                                 onClick={() => setSelectedSpanId(span.id)}
                                 className={cn(
                                   'relative block w-full border-b border-border/60 px-2 text-left transition last:border-b-0',
-                                  selectedSpanId === span.id ? 'bg-primary/10' : 'hover:bg-muted/50'
+                                  selectedSpanId === span.id ? 'bg-primary/12 ring-1 ring-inset ring-primary/40' : 'hover:bg-muted/50'
                                 )}
                                 style={{ height: `${timelineRowHeight}px` }}
                               >
@@ -1311,6 +1329,10 @@ export default function App() {
                                 const computedWidthPct = ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100;
                                 const isPointSpan = !hasDuration;
                                 const width = Math.max(0.5, computedWidthPct);
+                                const offsetNs = Math.max(0, start - timelineMeta.minStart);
+                                const inputTokens = toNumber(attrs['gen_ai.usage.input_tokens']);
+                                const outputTokens = toNumber(attrs['gen_ai.usage.output_tokens']);
+                                const spanStatus = span.status_code === 2 ? 'error' : span.end_time_unix_nano ? 'completed' : 'running';
 
                                 return (
                                   <button
@@ -1318,7 +1340,7 @@ export default function App() {
                                     onClick={() => setSelectedSpanId(span.id)}
                                     className={cn(
                                       'relative block w-full border-b border-border/60 px-2 text-left transition last:border-b-0',
-                                      selectedSpanId === span.id ? 'bg-primary/10' : 'hover:bg-muted/50'
+                                      selectedSpanId === span.id ? 'bg-primary/12 ring-1 ring-inset ring-primary/40' : 'hover:bg-muted/50'
                                     )}
                                     style={{ height: `${timelineRowHeight}px` }}
                                   >
@@ -1328,15 +1350,22 @@ export default function App() {
                                           className={cn(
                                             'absolute top-1/2 h-4 -translate-y-1/2 rounded-sm',
                                             type === 'llm' ? 'bg-violet-500/80' : type === 'tool' ? 'bg-cyan-500/80' : 'bg-slate-500/80',
+                                            selectedSpanId === span.id && 'ring-2 ring-primary/80 shadow-[0_0_0_1px_hsl(var(--background))]',
                                             suspiciousLoopSpanIds.has(span.id) && 'ring-1 ring-amber-400'
                                           )}
                                           style={isPointSpan ? { left: `${left}%`, width: '4px' } : { left: `${left}%`, width: `${width}%` }}
                                         />
                                       </TooltipTrigger>
                                       <TooltipContent>
-                                        <div className="space-y-1">
-                                          <div className="font-semibold">{span.name || 'unknown'}</div>
+                                        <div className="space-y-1 text-xs">
+                                          <div className="font-semibold text-sm">{span.name || 'unknown'}</div>
+                                          <div>type: {type}</div>
+                                          <div>status: {spanStatus}</div>
+                                          <div>offset: {formatOffsetMs(offsetNs)}</div>
                                           <div>duration: {formatDurationNs(span.duration_ns)}</div>
+                                          {(inputTokens > 0 || outputTokens > 0) ? (
+                                            <div>tokens: in {inputTokens} / out {outputTokens}</div>
+                                          ) : null}
                                         </div>
                                       </TooltipContent>
                                     </Tooltip>
@@ -1347,6 +1376,7 @@ export default function App() {
                           </div>
                         </div>
                       </div>
+                      )}
                     </div>
                   </>
                 )}
