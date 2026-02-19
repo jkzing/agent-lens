@@ -96,15 +96,22 @@ Use the workflow: `.github/workflows/release.yml`
   - `npm_tag` (default `latest`)
   - `create_git_tag` (default `true`)
 
-Required repository secret:
+Trusted Publishing setup (npm):
 
-- `NPM_TOKEN` — npm automation token with publish permission
+- Configure **Trusted Publisher** in npm for each package:
+  - `@agent-lens/server`
+  - `@agent-lens/ui`
+  - `agent-lens`
+- Use this GitHub repository + workflow as trusted source
+- No `NPM_TOKEN` secret is required in this model
 
-The workflow runs:
+The workflow uses GitHub OIDC and runs:
 
 1. `pnpm release:check`
-2. publish in order: `@agent-lens/server` → `@agent-lens/ui` → `agent-lens`
-3. optional git tag creation: `vX.Y.Z`
+2. pack artifacts with `pnpm pack`
+3. publish in order via `npm publish --provenance`:
+   - `@agent-lens/server` → `@agent-lens/ui` → `agent-lens`
+4. optional git tag creation: `vX.Y.Z`
 
 ---
 

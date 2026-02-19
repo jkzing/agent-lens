@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -86,38 +87,34 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Ensure npm token exists
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Pack publish artifacts
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN secret is missing. Configure it in repository settings."
-            exit 1
-          fi
+          mkdir -p /tmp/release-tarballs
+          (cd packages/server && pnpm pack --pack-destination /tmp/release-tarballs)
+          (cd packages/ui && pnpm pack --pack-destination /tmp/release-tarballs)
+          (cd packages/cli && pnpm pack --pack-destination /tmp/release-tarballs)
+          ls -lh /tmp/release-tarballs
 
-      - name: Publish @agent-lens/server
+      - name: Publish @agent-lens/server (Trusted Publishing)
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ inputs.npm_tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          cd packages/server
-          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+          npm publish "/tmp/release-tarballs/agent-lens-server-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
 
-      - name: Publish @agent-lens/ui
+      - name: Publish @agent-lens/ui (Trusted Publishing)
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ inputs.npm_tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          cd packages/ui
-          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+          npm publish "/tmp/release-tarballs/agent-lens-ui-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
 
-      - name: Publish agent-lens CLI
+      - name: Publish agent-lens CLI (Trusted Publishing)
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ inputs.npm_tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          cd packages/cli
-          pnpm publish --access public --no-git-checks --tag "$NPM_TAG"
+          npm publish "/tmp/release-tarballs/agent-lens-${VERSION}.tgz" --provenance --access public --tag "$NPM_TAG"
 
   tag:
     name: Tag release
