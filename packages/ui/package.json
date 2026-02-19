@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "rsbuild dev --port 5173",
     "build": "rsbuild build",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@radix-ui/react-collapsible": "^1.1.12",
@@ -32,7 +33,11 @@
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.7",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "vitest": "^2.1.8",
+    "jsdom": "^25.0.1",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/jest-dom": "^6.6.3"
   },
   "author": "jkzing",
   "license": "MIT",
