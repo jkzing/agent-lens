@@ -81,7 +81,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
+          # No registry-url here: setup-node's registry-url injects NODE_AUTH_TOKEN
+          # into .npmrc which overrides OIDC-based auth used by npm Trusted Publishing.
+          # Removing it lets npm use the OIDC token from id-token: write directly.
           cache: pnpm
 
       - name: Install dependencies
