@@ -200,6 +200,15 @@ function detectLoopPattern(spans: SpanRow[]): Set<number> {
   return suspiciousIds;
 }
 
+function hasFollowingAtDepth(spans: SpanRow[], index: number, depth: number): boolean {
+  for (let i = index + 1; i < spans.length; i += 1) {
+    const nextDepth = spans[i].depth;
+    if (nextDepth < depth) return false;
+    if (nextDepth === depth) return true;
+  }
+  return false;
+}
+
 function getTimelineTicks(totalNs: number): number[] {
   const totalMs = Math.max(1, totalNs / 1_000_000);
   const targetTicks = 6;
@@ -587,17 +596,30 @@ export default function App() {
 
   const timelineMeta = useMemo(() => {
     const starts = spans
-      .map((s) => (s.start_time_unix_nano ? Number(s.start_time_unix_nano) : null))
-      .filter((v): v is number => Number.isFinite(v));
-    const ends = spans
-      .map((s) => (s.end_time_unix_nano ? Number(s.end_time_unix_nano) : null))
+      .map((s) => (s.start_time_unix_nano != null ? Number(s.start_time_unix_nano) : null))
       .filter((v): v is number => Number.isFinite(v));
 
     const minStart = starts.length ? Math.min(...starts) : 0;
+
+    const ends = spans
+      .map((s) => {
+        const start = s.start_time_unix_nano != null ? Number(s.start_time_unix_nano) : null;
+        if (start == null || !Number.isFinite(start)) return null;
+
+        const end = s.end_time_unix_nano != null ? Number(s.end_time_unix_nano) : null;
+        if (end != null && Number.isFinite(end)) return end;
+
+        const duration = s.duration_ns != null ? Number(s.duration_ns) : null;
+        if (duration != null && Number.isFinite(duration) && duration > 0) return start + duration;
+
+        return null;
+      })
+      .filter((v): v is number => Number.isFinite(v));
+
     const maxEnd = ends.length ? Math.max(...ends) : minStart + 1;
     const total = Math.max(1, maxEnd - minStart);
 
-    return { minStart, total };
+    return { minStart, maxEnd, total };
   }, [spans]);
 
   const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
@@ -605,45 +627,6 @@ export default function App() {
   const timelineRowHeight = 32;
   const timelineHeaderHeight = 32;
   const nameColumnWidth = 260;
-  const treeMeta = useMemo(() => {
-    const rowKey = (span: SpanRow) => span.span_id || `id:${span.id}`;
-    const children = new Map<string, string[]>();
-    const indexByKey = new Map<string, number>();
-
-    spans.forEach((span, index) => {
-      indexByKey.set(rowKey(span), index);
-    });
-
-    for (const span of spans) {
-      if (!span.parent_span_id) continue;
-      const parentKey = span.parent_span_id;
-      const key = rowKey(span);
-      const list = children.get(parentKey) || [];
-      list.push(key);
-      children.set(parentKey, list);
-    }
-
-    const lastDescendantIndexByKey = new Map<string, number>();
-
-    const computeLastIndex = (key: string): number => {
-      if (lastDescendantIndexByKey.has(key)) {
-        return lastDescendantIndexByKey.get(key) ?? (indexByKey.get(key) ?? 0);
-      }
-      let last = indexByKey.get(key) ?? 0;
-      const childKeys = children.get(key) || [];
-      for (const childKey of childKeys) {
-        last = Math.max(last, computeLastIndex(childKey));
-      }
-      lastDescendantIndexByKey.set(key, last);
-      return last;
-    };
-
-    for (const span of spans) {
-      computeLastIndex(rowKey(span));
-    }
-
-    return { children, lastDescendantIndexByKey, rowKey, indexByKey };
-  }, [spans]);
   const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
   const selectedSpanContextRows = useMemo(() => (selectedSpan ? buildSpanContextRows(selectedSpan) : []), [selectedSpan]);
 
@@ -1177,12 +1160,7 @@ export default function App() {
                           {spans.map((span, index) => {
                             const attrs = parseJsonObject(span.attributes);
                             const type = detectSpanType(span, attrs);
-                            const key = treeMeta.rowKey(span);
-                            const hasChildren = (treeMeta.children.get(key)?.length || 0) > 0;
-                            const lastDescendantIndex = treeMeta.lastDescendantIndexByKey.get(key) ?? index;
                             const indent = span.depth * 12;
-                            const branchLeft = Math.max(0, indent - 8);
-                            const lineColor = 'var(--border)';
 
                             return (
                               <button
@@ -1195,21 +1173,22 @@ export default function App() {
                                 style={{ height: `${timelineRowHeight}px` }}
                               >
                                 {span.depth > 0 ? (
-                                  <>
-                                    <span className="absolute" style={{ left: `${branchLeft}px`, top: '50%', width: '8px', borderTop: `1px solid ${lineColor}` }} />
-                                    <span className="absolute" style={{ left: `${branchLeft}px`, top: 0, bottom: '50%', borderLeft: `1px solid ${lineColor}` }} />
-                                  </>
-                                ) : null}
-                                {hasChildren && lastDescendantIndex > index ? (
-                                  <span
-                                    className="absolute"
-                                    style={{
-                                      left: `${indent + 4}px`,
-                                      top: '50%',
-                                      height: `${(lastDescendantIndex - index) * timelineRowHeight + timelineRowHeight / 2}px`,
-                                      borderLeft: `1px solid ${lineColor}`
-                                    }}
-                                  />
+                                  <div className="pointer-events-none absolute inset-0">
+                                    {Array.from({ length: span.depth }).map((_, levelIndex) => {
+                                      const level = levelIndex + 1;
+                                      const left = (level - 1) * 12 + 6;
+                                      const hasNext = hasFollowingAtDepth(spans, index, level);
+
+                                      if (level === span.depth) {
+                                        return (
+                                          <div key={`elbow-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, width: '12px', height: hasNext ? '100%' : '50%', borderLeft: '1px solid hsl(var(--border))', borderBottom: '1px solid hsl(var(--border))' }} />
+                                        );
+                                      }
+
+                                      if (!hasNext) return null;
+                                      return <div key={`line-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, height: '100%', borderLeft: '1px solid hsl(var(--border))' }} />;
+                                    })}
+                                  </div>
                                 ) : null}
 
                                 <div className="flex h-full items-center gap-2" style={{ paddingLeft: `${indent + 8}px` }}>
@@ -1252,10 +1231,16 @@ export default function App() {
                               {spans.map((span) => {
                                 const attrs = parseJsonObject(span.attributes);
                                 const type = detectSpanType(span, attrs);
-                                const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
-                                const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
+                                const rawStart = span.start_time_unix_nano != null ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
+                                const start = Number.isFinite(rawStart) ? rawStart : timelineMeta.minStart;
+                                const rawEnd = span.end_time_unix_nano != null ? Number(span.end_time_unix_nano) : null;
+                                const durationNs = span.duration_ns != null ? Number(span.duration_ns) : null;
+                                const hasDuration = durationNs != null && Number.isFinite(durationNs) && durationNs > 0;
+                                const end = rawEnd != null && Number.isFinite(rawEnd) ? rawEnd : (hasDuration ? start + (durationNs ?? 0) : start);
                                 const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
-                                const width = Math.max(0.5, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
+                                const computedWidthPct = ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100;
+                                const isPointSpan = !hasDuration;
+                                const width = Math.max(0.5, computedWidthPct);
 
                                 return (
                                   <button
@@ -1275,7 +1260,7 @@ export default function App() {
                                             type === 'llm' ? 'bg-violet-500/80' : type === 'tool' ? 'bg-cyan-500/80' : 'bg-slate-500/80',
                                             suspiciousLoopSpanIds.has(span.id) && 'ring-1 ring-amber-400'
                                           )}
-                                          style={{ left: `${left}%`, width: `${width}%` }}
+                                          style={isPointSpan ? { left: `${left}%`, width: '4px' } : { left: `${left}%`, width: `${width}%` }}
                                         />
                                       </TooltipTrigger>
                                       <TooltipContent>
