@@ -2,70 +2,17 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { cors } from 'hono/cors';
 import { Hono, type Context } from 'hono';
-import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import fs from 'node:fs';
 import { decodeOtlpProtobufTraceRequest, extractSpans, type ParsedSpan } from './otlp.js';
+import { createDbClient } from './db/client.js';
+import { bootstrapSchema } from './db/schema.js';
+import { dbPath, hasUiDist, port, uiDistPath } from './config/runtime.js';
 
 const app = new Hono();
 app.use('*', cors());
 
-const dataDir = path.resolve(process.env.DATA_DIR ?? path.resolve(process.cwd(), 'data'));
-fs.mkdirSync(dataDir, { recursive: true });
-
-const dbPath = path.join(dataDir, 'agent-lens.db');
-const db = new DatabaseSync(dbPath, { readBigInts: true });
-
-const uiDistPath = path.resolve(process.env.UI_DIST ?? path.join(process.cwd(), '../ui/dist'));
-const hasUiDist = fs.existsSync(path.join(uiDistPath, 'index.html'));
-
-db.exec(`
-CREATE TABLE IF NOT EXISTS spans (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  received_at TEXT NOT NULL,
-  trace_id TEXT,
-  span_id TEXT,
-  parent_span_id TEXT,
-  name TEXT,
-  kind INTEGER,
-  start_time_unix_nano TEXT,
-  end_time_unix_nano TEXT,
-  duration_ns INTEGER,
-  attributes TEXT,
-  status_code INTEGER,
-  status TEXT,
-  resource_attributes TEXT,
-  events TEXT,
-  payload TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
-CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
-`);
-
-const existingColumns = db
-  .prepare('PRAGMA table_info(spans)')
-  .all() as Array<{ name: string }>;
-const columnSet = new Set(existingColumns.map((col) => col.name));
-
-const ensureColumn = (name: string, type: string) => {
-  if (!columnSet.has(name)) {
-    db.exec(`ALTER TABLE spans ADD COLUMN ${name} ${type}`);
-  }
-};
-
-ensureColumn('trace_id', 'TEXT');
-ensureColumn('span_id', 'TEXT');
-ensureColumn('parent_span_id', 'TEXT');
-ensureColumn('name', 'TEXT');
-ensureColumn('kind', 'INTEGER');
-ensureColumn('start_time_unix_nano', 'TEXT');
-ensureColumn('end_time_unix_nano', 'TEXT');
-ensureColumn('duration_ns', 'INTEGER');
-ensureColumn('attributes', 'TEXT');
-ensureColumn('status_code', 'INTEGER');
-ensureColumn('status', 'TEXT');
-ensureColumn('resource_attributes', 'TEXT');
-ensureColumn('events', 'TEXT');
+const db = createDbClient(dbPath);
+bootstrapSchema(db);
 
 const insertSpan = db.prepare(`
   INSERT INTO spans (
@@ -481,8 +428,6 @@ if (hasUiDist) {
   app.use('/assets/*', serveStatic({ root: uiDistPath }));
   app.get('*', serveStatic({ path: path.join(uiDistPath, 'index.html') }));
 }
-
-const port = Number(process.env.PORT || 4318);
 
 const server = serve({ fetch: app.fetch, port }, () => {
   console.log(`[agent-lens/server] listening on http://localhost:${port}`);
