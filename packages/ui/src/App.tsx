@@ -602,6 +602,48 @@ export default function App() {
 
   const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
   const timelineCanvasWidth = useMemo(() => Math.max(980, Math.min(2600, 720 + spans.length * 18)), [spans.length]);
+  const timelineRowHeight = 32;
+  const timelineHeaderHeight = 32;
+  const nameColumnWidth = 260;
+  const treeMeta = useMemo(() => {
+    const rowKey = (span: SpanRow) => span.span_id || `id:${span.id}`;
+    const children = new Map<string, string[]>();
+    const indexByKey = new Map<string, number>();
+
+    spans.forEach((span, index) => {
+      indexByKey.set(rowKey(span), index);
+    });
+
+    for (const span of spans) {
+      if (!span.parent_span_id) continue;
+      const parentKey = span.parent_span_id;
+      const key = rowKey(span);
+      const list = children.get(parentKey) || [];
+      list.push(key);
+      children.set(parentKey, list);
+    }
+
+    const lastDescendantIndexByKey = new Map<string, number>();
+
+    const computeLastIndex = (key: string): number => {
+      if (lastDescendantIndexByKey.has(key)) {
+        return lastDescendantIndexByKey.get(key) ?? (indexByKey.get(key) ?? 0);
+      }
+      let last = indexByKey.get(key) ?? 0;
+      const childKeys = children.get(key) || [];
+      for (const childKey of childKeys) {
+        last = Math.max(last, computeLastIndex(childKey));
+      }
+      lastDescendantIndexByKey.set(key, last);
+      return last;
+    };
+
+    for (const span of spans) {
+      computeLastIndex(rowKey(span));
+    }
+
+    return { children, lastDescendantIndexByKey, rowKey, indexByKey };
+  }, [spans]);
   const selectedSpanEvents = useMemo(() => parseSpanEvents(selectedSpan?.events ?? null), [selectedSpan]);
   const selectedSpanContextRows = useMemo(() => (selectedSpan ? buildSpanContextRows(selectedSpan) : []), [selectedSpan]);
 
@@ -1126,86 +1168,131 @@ export default function App() {
                       <span className="inline-flex items-center gap-1"><i className="h-2 w-2 rounded-full bg-span-internal" />Internal</span>
                     </div>
 
-                    <ScrollArea className="h-[calc(100vh-470px)] rounded border border-border bg-background/30 [&_[data-radix-scroll-area-viewport]]:overflow-x-auto [&_[data-radix-scroll-area-viewport]]:overflow-y-auto">
-                      <div className="p-2" style={{ width: `${timelineCanvasWidth}px`, minWidth: '100%' }}>
-                        <div className="mb-2 relative h-10 overflow-hidden rounded border border-border bg-background/50">
-                          {ticks.map((tickNs, idx) => {
-                            const leftPct = (tickNs / timelineMeta.total) * 100;
-                            const labelTransform = leftPct < 6 ? 'translateX(0)' : leftPct > 94 ? 'translateX(-100%)' : 'translateX(-50%)';
+                    <div className="h-[calc(100vh-470px)] overflow-y-auto rounded border border-border bg-background/30">
+                      <div className="flex min-w-0">
+                        <div className="shrink-0 border-r border-border bg-background/40" style={{ width: `${nameColumnWidth}px` }}>
+                          <div className="sticky top-0 z-20 flex items-center border-b border-border bg-background/80 px-3 text-xs font-medium text-muted-foreground backdrop-blur" style={{ height: `${timelineHeaderHeight}px` }}>
+                            Span
+                          </div>
+                          {spans.map((span, index) => {
+                            const attrs = parseJsonObject(span.attributes);
+                            const type = detectSpanType(span, attrs);
+                            const key = treeMeta.rowKey(span);
+                            const hasChildren = (treeMeta.children.get(key)?.length || 0) > 0;
+                            const lastDescendantIndex = treeMeta.lastDescendantIndexByKey.get(key) ?? index;
+                            const indent = span.depth * 12;
+                            const branchLeft = Math.max(0, indent - 8);
+                            const lineColor = 'var(--border)';
+
                             return (
-                              <div key={`${tickNs}-${idx}`}>
-                                <div className="absolute top-0 h-5 w-px bg-border" style={{ left: `${leftPct}%` }} />
-                                <div
-                                  className="absolute bottom-0 text-[10px] text-muted-foreground whitespace-nowrap"
-                                  style={{ left: `${leftPct}%`, transform: labelTransform }}
-                                >
-                                  {formatTick(tickNs)}
+                              <button
+                                key={span.id}
+                                onClick={() => setSelectedSpanId(span.id)}
+                                className={cn(
+                                  'relative block w-full border-b border-border/60 px-2 text-left transition last:border-b-0',
+                                  selectedSpanId === span.id ? 'bg-primary/10' : 'hover:bg-muted/50'
+                                )}
+                                style={{ height: `${timelineRowHeight}px` }}
+                              >
+                                {span.depth > 0 ? (
+                                  <>
+                                    <span className="absolute" style={{ left: `${branchLeft}px`, top: '50%', width: '8px', borderTop: `1px solid ${lineColor}` }} />
+                                    <span className="absolute" style={{ left: `${branchLeft}px`, top: 0, bottom: '50%', borderLeft: `1px solid ${lineColor}` }} />
+                                  </>
+                                ) : null}
+                                {hasChildren && lastDescendantIndex > index ? (
+                                  <span
+                                    className="absolute"
+                                    style={{
+                                      left: `${indent + 4}px`,
+                                      top: '50%',
+                                      height: `${(lastDescendantIndex - index) * timelineRowHeight + timelineRowHeight / 2}px`,
+                                      borderLeft: `1px solid ${lineColor}`
+                                    }}
+                                  />
+                                ) : null}
+
+                                <div className="flex h-full items-center gap-2" style={{ paddingLeft: `${indent + 8}px` }}>
+                                  <span className={cn('h-1.5 w-1.5 rounded-full', type === 'llm' ? 'bg-violet-500' : type === 'tool' ? 'bg-cyan-500' : 'bg-slate-500')} />
+                                  <span className="truncate text-sm">{span.name || 'unknown'}</span>
+                                  {suspiciousLoopSpanIds.has(span.id) ? (
+                                    <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">loop?</span>
+                                  ) : null}
                                 </div>
-                              </div>
+                              </button>
                             );
                           })}
                         </div>
 
-                        <div className="space-y-2">
-                          {spans.map((span) => {
-                          const attrs = parseJsonObject(span.attributes);
-                          const type = detectSpanType(span, attrs);
-                          const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
-                          const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
-                          const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
-                          const width = Math.max(0.8, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
-                          const guideLevels = Array.from({ length: Math.max(0, span.depth) }, (_, i) => i);
-
-                          return (
-                            <button
-                              key={span.id}
-                              onClick={() => setSelectedSpanId(span.id)}
-                              className={cn(
-                                'w-full rounded-md border p-2 text-left transition',
-                                selectedSpanId === span.id
-                                  ? 'border-primary bg-primary/10'
-                                  : 'border-border bg-background/30 hover:border-ring/60',
-                                span.status_code === 2 && 'ring-1 ring-red-500/70'
-                              )}
-                            >
-                              <div className="grid grid-cols-[280px_minmax(0,1fr)] items-center gap-3">
-                                <div className="relative h-7">
-                                  {guideLevels.map((level) => (
-                                    <span key={level} className="absolute top-0 h-full w-px bg-border/90" style={{ left: `${12 + level * 14}px` }} />
-                                  ))}
-                                  {span.depth > 0 ? (
-                                    <span className="absolute top-1/2 h-px bg-border/90" style={{ left: `${12 + (span.depth - 1) * 14}px`, width: '14px' }} />
-                                  ) : null}
-                                  <div className="absolute top-1/2 right-0 -translate-y-1/2 truncate text-sm" style={{ left: `${18 + span.depth * 14}px` }}>
-                                    {span.name || 'unknown'}
-                                    {suspiciousLoopSpanIds.has(span.id) ? (
-                                      <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">loop?</span>
-                                    ) : null}
+                        <div className="min-w-0 flex-1 overflow-x-auto">
+                          <div className="relative" style={{ width: `${timelineCanvasWidth}px`, minWidth: '100%' }}>
+                            <div className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur" style={{ height: `${timelineHeaderHeight}px` }}>
+                              {ticks.map((tickNs, idx) => {
+                                const leftPct = (tickNs / timelineMeta.total) * 100;
+                                const labelTransform = leftPct < 6 ? 'translateX(0)' : leftPct > 94 ? 'translateX(-100%)' : 'translateX(-50%)';
+                                return (
+                                  <div key={`${tickNs}-${idx}`}>
+                                    <div className="absolute top-0 h-full w-px border-l border-dashed border-border/70" style={{ left: `${leftPct}%` }} />
+                                    <div className="absolute bottom-1 text-[10px] whitespace-nowrap text-muted-foreground" style={{ left: `${leftPct}%`, transform: labelTransform }}>
+                                      {formatTick(tickNs)}
+                                    </div>
                                   </div>
-                                </div>
+                                );
+                              })}
+                            </div>
 
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="relative h-7 rounded bg-muted/60">
-                                      <div className="absolute inset-y-0 border-r border-border/50" style={{ left: `${left}%` }} />
-                                      <div className={`absolute top-1 h-5 rounded ${spanTypeColor(type)}`} style={{ left: `${left}%`, width: `${width}%` }} />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <div className="space-y-1">
-                                      <div className="font-semibold">{span.name || 'unknown'}</div>
-                                      <div>duration: {formatDurationNs(span.duration_ns)}</div>
-                                      <div>type: {type}</div>
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            </button>
-                          );
-                        })}
+                            <div className="absolute inset-0 top-0 pointer-events-none">
+                              {ticks.map((tickNs, idx) => {
+                                const leftPct = (tickNs / timelineMeta.total) * 100;
+                                return <div key={`grid-${tickNs}-${idx}`} className="absolute top-0 h-full w-px border-l border-dashed border-border/50" style={{ left: `${leftPct}%` }} />;
+                              })}
+                            </div>
+
+                            <div className="relative">
+                              {spans.map((span) => {
+                                const attrs = parseJsonObject(span.attributes);
+                                const type = detectSpanType(span, attrs);
+                                const start = span.start_time_unix_nano ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
+                                const end = span.end_time_unix_nano ? Number(span.end_time_unix_nano) : start;
+                                const left = ((start - timelineMeta.minStart) / timelineMeta.total) * 100;
+                                const width = Math.max(0.5, ((Math.max(end, start + 1) - start) / timelineMeta.total) * 100);
+
+                                return (
+                                  <button
+                                    key={span.id}
+                                    onClick={() => setSelectedSpanId(span.id)}
+                                    className={cn(
+                                      'relative block w-full border-b border-border/60 px-2 text-left transition last:border-b-0',
+                                      selectedSpanId === span.id ? 'bg-primary/10' : 'hover:bg-muted/50'
+                                    )}
+                                    style={{ height: `${timelineRowHeight}px` }}
+                                  >
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div
+                                          className={cn(
+                                            'absolute top-1/2 h-4 -translate-y-1/2 rounded-sm',
+                                            type === 'llm' ? 'bg-violet-500/80' : type === 'tool' ? 'bg-cyan-500/80' : 'bg-slate-500/80',
+                                            suspiciousLoopSpanIds.has(span.id) && 'ring-1 ring-amber-400'
+                                          )}
+                                          style={{ left: `${left}%`, width: `${width}%` }}
+                                        />
+                                      </TooltipTrigger>
+                                      <TooltipContent>
+                                        <div className="space-y-1">
+                                          <div className="font-semibold">{span.name || 'unknown'}</div>
+                                          <div>duration: {formatDurationNs(span.duration_ns)}</div>
+                                        </div>
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      </div>
-                    </ScrollArea>
+                    </div>
                   </>
                 )}
               </div>
