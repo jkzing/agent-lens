@@ -8,6 +8,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { AlertTriangle, Bot, Reply, Send, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTraceData, type SpanRow, type TraceSummary } from '@/hooks/useTraceData';
+import { TraceDetailPanel } from '@/features/traces/TraceDetailPanel';
 import { TraceListPanel } from '@/features/traces/TraceListPanel';
 import { TraceTimelinePanel } from '@/features/waterfall/TraceTimelinePanel';
 
@@ -187,11 +188,6 @@ function formatTick(ns: number): string {
   if (ms >= 1_000) return `${(ms / 1_000).toFixed(ms % 1_000 === 0 ? 0 : 1)}s`;
   if (ms >= 1) return `${Math.round(ms)}ms`;
   return `${ms.toFixed(2)}ms`;
-}
-
-function eventVariant(name: string): 'default' | 'outline' {
-  if (name === 'gen_ai.content.prompt' || name === 'gen_ai.content.completion') return 'default';
-  return 'outline';
 }
 
 function statusBadgeVariant(status: 'success' | 'running' | 'error' | 'waiting'): 'success' | 'warning' | 'destructive' | 'outline' {
@@ -1002,103 +998,15 @@ export default function App() {
               />
 
               {!detailCollapsed ? (
-              <aside className="rounded-xl border border-border bg-card p-4">
-                    <div className="mb-3 flex h-9 items-center">
-                      <h2 className="text-lg font-semibold">Details</h2>
-                    </div>
-                    {!selectedSpan ? (
-                      <p className="text-sm text-muted-foreground">Click a span in timeline to inspect details.</p>
-                    ) : (
-                      (() => {
-                    const attrs = parseJsonObject(selectedSpan.attributes);
-                    const resourceAttrs = parseJsonObject(selectedSpan.resource_attributes);
-                    const type = detectSpanType(selectedSpan, attrs);
-                    const inputTokens = attrs['gen_ai.usage.input_tokens'];
-                    const outputTokens = attrs['gen_ai.usage.output_tokens'];
-                    const toolInput = attrs['tool.input'] ?? attrs['tool.arguments'] ?? attrs.input;
-                    const toolOutput = attrs['tool.output'] ?? attrs.output;
-                    const spanStart = selectedSpan.start_time_unix_nano ? Number(selectedSpan.start_time_unix_nano) : null;
-
-                    return (
-                      <div className="space-y-3 text-sm">
-                        {selectedSpan.status_code === 2 ? (
-                          <div className="rounded border border-destructive/40 bg-destructive/15 px-2 py-1 text-xs text-destructive">ERROR status span</div>
-                        ) : null}
-
-                        <div className="grid grid-cols-1 gap-1 font-mono text-xs text-muted-foreground">
-                          <div>name: {selectedSpan.name || 'unknown'}</div>
-                          <div>type: {type}</div>
-                          <div>traceId: {selectedSpan.trace_id}</div>
-                          <div>spanId: {selectedSpan.span_id || '-'}</div>
-                          <div>duration: {formatDurationNs(selectedSpan.duration_ns)}</div>
-                        </div>
-
-                        {selectedSpanContextRows.length > 0 ? (
-                          <div className="rounded border border-sky-700/40 bg-sky-500/10 p-2 text-xs">
-                            <div className="mb-1 font-semibold uppercase tracking-wide text-sky-600 dark:text-sky-400">Context</div>
-                            <div className="space-y-1 font-mono">
-                              {selectedSpanContextRows.map((row) => (
-                                <div key={row.label} className="flex gap-2">
-                                  <span className="text-muted-foreground">{row.label}:</span>
-                                  <span className="truncate text-foreground">{row.value}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <details className="rounded border border-border bg-background/40 p-2" open>
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Attributes</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-foreground">{JSON.stringify(attrs, null, 2)}</pre>
-                        </details>
-
-                        <details className="rounded border border-border bg-background/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Resource Attributes</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-foreground">{JSON.stringify(resourceAttrs, null, 2)}</pre>
-                        </details>
-
-                        <details className="rounded border border-border bg-background/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tool Input (foldable)</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-foreground">{toolInput == null ? '(none)' : JSON.stringify(toolInput, null, 2)}</pre>
-                        </details>
-
-                        <details className="rounded border border-border bg-background/40 p-2">
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tool Output (foldable)</summary>
-                          <pre className="mt-2 overflow-auto text-xs text-foreground">{toolOutput == null ? '(none)' : JSON.stringify(toolOutput, null, 2)}</pre>
-                        </details>
-
-                        <details className="rounded border border-border bg-background/40 p-2" open>
-                          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Events ({selectedSpanEvents.length})</summary>
-                          {selectedSpanEvents.length === 0 ? (
-                            <div className="mt-2 text-xs text-muted-foreground">(none)</div>
-                          ) : (
-                            <div className="mt-2 space-y-2">
-                              {selectedSpanEvents.map((event, idx) => {
-                                const offset = spanStart != null && event.timeUnixNano != null ? event.timeUnixNano - spanStart : null;
-                                return (
-                                  <div key={`${event.name}-${idx}`} className="rounded border border-border/70 p-2">
-                                    <div className="mb-1 flex items-center justify-between gap-2">
-                                      <div className="font-mono text-xs text-foreground">{offset == null ? 'offset: -' : `offset: ${formatOffsetMs(offset)}`}</div>
-                                      <Badge variant={eventVariant(event.name)}>{event.name}</Badge>
-                                    </div>
-                                    <pre className="overflow-auto text-xs text-muted-foreground">{JSON.stringify(event.attributes, null, 2)}</pre>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </details>
-
-                        <div className="rounded border border-border bg-background/40 p-2 text-xs">
-                          <div className="mb-1 font-semibold uppercase tracking-wide text-muted-foreground">LLM token usage</div>
-                          <div className="font-mono text-foreground">input: {inputTokens ?? '-'}</div>
-                          <div className="font-mono text-foreground">output: {outputTokens ?? '-'}</div>
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
-              </aside>
+                <TraceDetailPanel
+                  selectedSpan={selectedSpan}
+                  selectedSpanEvents={selectedSpanEvents}
+                  selectedSpanContextRows={selectedSpanContextRows}
+                  parseJsonObject={parseJsonObject}
+                  detectSpanType={detectSpanType}
+                  formatDurationNs={formatDurationNs}
+                  formatOffsetMs={formatOffsetMs}
+                />
               ) : null}
             </section>
           </section>
