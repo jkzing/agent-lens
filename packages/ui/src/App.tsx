@@ -434,6 +434,7 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [traceSearch, setTraceSearch] = useState('');
+  const [spanSearch, setSpanSearch] = useState('');
   const [tracesCollapsed, setTracesCollapsed] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
   const [selectedOverviewStepId, setSelectedOverviewStepId] = useState<number | null>(null);
@@ -499,6 +500,10 @@ export default function App() {
   }, [selectedTraceId]);
 
   useEffect(() => {
+    setSpanSearch('');
+  }, [selectedTraceId]);
+
+  useEffect(() => {
     if (!autoRefresh) return;
     const timer = setInterval(() => {
       refreshAll(selectedTraceId).catch(() => {});
@@ -556,6 +561,42 @@ export default function App() {
   const selectedTrace = filteredTraces.find((t) => t.trace_id === selectedTraceId) || null;
   const selectedSpan = spans.find((s) => s.id === selectedSpanId) || null;
   const suspiciousLoopSpanIds = useMemo(() => detectLoopPattern(spans), [spans]);
+
+  const filteredSpans = useMemo(() => {
+    const query = spanSearch.trim().toLowerCase();
+    if (!query) return spans;
+
+    const bySpanId = new Map<string, SpanRow>();
+    for (const span of spans) {
+      if (span.span_id) bySpanId.set(span.span_id, span);
+    }
+
+    const visibleIds = new Set<number>();
+    for (const span of spans) {
+      const spanName = (span.name || '').toLowerCase();
+      if (!spanName.includes(query)) continue;
+
+      let cursor: SpanRow | null = span;
+      while (cursor) {
+        visibleIds.add(cursor.id);
+        if (!cursor.parent_span_id) break;
+        cursor = bySpanId.get(cursor.parent_span_id) || null;
+      }
+    }
+
+    return spans.filter((span) => visibleIds.has(span.id));
+  }, [spans, spanSearch]);
+
+  useEffect(() => {
+    if (filteredSpans.length === 0) {
+      setSelectedSpanId(null);
+      return;
+    }
+
+    if (selectedSpanId == null || !filteredSpans.some((span) => span.id === selectedSpanId)) {
+      setSelectedSpanId(filteredSpans[0].id);
+    }
+  }, [filteredSpans, selectedSpanId]);
 
   const traceCostStats = useMemo(() => {
     const byModel = new Map<string, ModelCostStat>();
@@ -623,7 +664,7 @@ export default function App() {
   }, [spans]);
 
   const ticks = useMemo(() => getTimelineTicks(timelineMeta.total), [timelineMeta.total]);
-  const timelineCanvasWidth = useMemo(() => Math.max(980, Math.min(2600, 720 + spans.length * 18)), [spans.length]);
+  const timelineCanvasWidth = useMemo(() => Math.max(980, Math.min(2600, 720 + filteredSpans.length * 18)), [filteredSpans.length]);
   const timelineRowHeight = 32;
   const timelineHeaderHeight = 32;
   const nameColumnWidth = 260;
@@ -1095,6 +1136,23 @@ export default function App() {
                     </div>
                   ) : null}
                 </div>
+
+                {selectedTrace ? (
+                  <div className="mb-3 flex items-center gap-2">
+                    <Input
+                      value={spanSearch}
+                      onChange={(e) => setSpanSearch(e.target.value)}
+                      placeholder="Filter spans by name..."
+                      className="max-w-sm"
+                    />
+                    {spanSearch.trim() ? (
+                      <span className="text-xs text-muted-foreground">
+                        showing {filteredSpans.length}/{spans.length}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {!selectedTrace ? (
                   <p className="text-sm text-muted-foreground">Select a trace from the left list.</p>
                 ) : (
@@ -1157,10 +1215,13 @@ export default function App() {
                           <div className="sticky top-0 z-20 flex items-center border-b border-border bg-background/80 px-3 text-xs font-medium text-muted-foreground backdrop-blur" style={{ height: `${timelineHeaderHeight}px` }}>
                             Span
                           </div>
-                          {spans.map((span, index) => {
+                          {filteredSpans.map((span, index) => {
                             const attrs = parseJsonObject(span.attributes);
                             const type = detectSpanType(span, attrs);
                             const indent = span.depth * 12;
+                            const spanName = span.name || 'unknown';
+                            const matchesSpanSearch =
+                              !!spanSearch.trim() && spanName.toLowerCase().includes(spanSearch.trim().toLowerCase());
 
                             return (
                               <button
@@ -1177,7 +1238,7 @@ export default function App() {
                                     {Array.from({ length: span.depth }).map((_, levelIndex) => {
                                       const level = levelIndex + 1;
                                       const left = (level - 1) * 12 + 6;
-                                      const hasNext = hasFollowingAtDepth(spans, index, level);
+                                      const hasNext = hasFollowingAtDepth(filteredSpans, index, level);
                                       const lineColor = 'hsl(var(--muted-foreground) / 0.5)';
 
                                       if (level === span.depth) {
@@ -1200,7 +1261,9 @@ export default function App() {
 
                                 <div className="flex h-full items-center gap-2" style={{ paddingLeft: `${indent + 8}px` }}>
                                   <span className={cn('h-1.5 w-1.5 rounded-full', type === 'llm' ? 'bg-violet-500' : type === 'tool' ? 'bg-cyan-500' : 'bg-slate-500')} />
-                                  <span className="truncate text-sm">{span.name || 'unknown'}</span>
+                                  <span className={cn('truncate text-sm', matchesSpanSearch && 'font-semibold text-primary')}>
+                                    {spanName}
+                                  </span>
                                   {suspiciousLoopSpanIds.has(span.id) ? (
                                     <span className="ml-auto rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">loop?</span>
                                   ) : null}
@@ -1235,7 +1298,7 @@ export default function App() {
                             </div>
 
                             <div className="relative">
-                              {spans.map((span) => {
+                              {filteredSpans.map((span) => {
                                 const attrs = parseJsonObject(span.attributes);
                                 const type = detectSpanType(span, attrs);
                                 const rawStart = span.start_time_unix_nano != null ? Number(span.start_time_unix_nano) : timelineMeta.minStart;
