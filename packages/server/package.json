@@ -16,11 +16,9 @@
   "dependencies": {
     "@hono/node-server": "^1.14.4",
     "@opentelemetry/otlp-transformer": "^0.212.0",
-    "better-sqlite3": "^11.10.0",
     "hono": "^4.8.2"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^24.3.0"
   },
   "author": "jkzing",
