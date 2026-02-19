@@ -38,10 +38,54 @@ npx @agent-lens/cli --port 4318
 
 > The executable command remains `agent-lens`.
 
-CLI options:
+## CLI options
 
 - `--port <number>` (default `4318`)
+- `--data-dir <path>` (default `~/.agent-lens/data`)
 - `--no-open`
+- `--config <path>`
+
+## Config file support (TOML first)
+
+Config discovery order (when `--config` is not provided):
+
+1. `~/.agent-lens/config.toml`
+2. `~/.agent-lens/config.json`
+
+Merge priority:
+
+`CLI flags > config file > defaults`
+
+Example `~/.agent-lens/config.toml`:
+
+```toml
+[server]
+port = 4318
+dataDir = "/absolute/path/to/.agent-lens/data"
+
+[ui]
+open = true
+```
+
+Generate the default template file:
+
+```bash
+agent-lens config init
+```
+
+Validate config file:
+
+```bash
+agent-lens config validate
+# or
+agent-lens config validate --config ~/.agent-lens/config.toml
+```
+
+Run with explicit config path:
+
+```bash
+agent-lens --config ~/.agent-lens/config.toml
+```
 
 ## API endpoints
 

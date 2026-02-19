@@ -10,7 +10,7 @@ import { decodeOtlpProtobufTraceRequest, extractSpans, type ParsedSpan } from '.
 const app = new Hono();
 app.use('*', cors());
 
-const dataDir = path.resolve(process.cwd(), 'data');
+const dataDir = path.resolve(process.env.DATA_DIR ?? path.resolve(process.cwd(), 'data'));
 fs.mkdirSync(dataDir, { recursive: true });
 
 const dbPath = path.join(dataDir, 'agent-lens.db');
