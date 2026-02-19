@@ -1178,15 +1178,22 @@ export default function App() {
                                       const level = levelIndex + 1;
                                       const left = (level - 1) * 12 + 6;
                                       const hasNext = hasFollowingAtDepth(spans, index, level);
+                                      const lineColor = 'hsl(var(--muted-foreground) / 0.5)';
 
                                       if (level === span.depth) {
                                         return (
-                                          <div key={`elbow-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, width: '12px', height: hasNext ? '100%' : '50%', borderLeft: '1px solid hsl(var(--border))', borderBottom: '1px solid hsl(var(--border))' }} />
+                                          <div key={`elbow-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, width: '12px', height: '100%' }}>
+                                            <div className="absolute" style={{ left: 0, top: 0, height: '50%', borderLeft: `1px solid ${lineColor}` }} />
+                                            {hasNext ? (
+                                              <div className="absolute" style={{ left: 0, top: '50%', bottom: 0, borderLeft: `1px solid ${lineColor}` }} />
+                                            ) : null}
+                                            <div className="absolute" style={{ left: 0, top: '50%', width: '12px', borderTop: `1px solid ${lineColor}` }} />
+                                          </div>
                                         );
                                       }
 
                                       if (!hasNext) return null;
-                                      return <div key={`line-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, height: '100%', borderLeft: '1px solid hsl(var(--border))' }} />;
+                                      return <div key={`line-${span.id}-${level}`} className="absolute" style={{ left: `${left}px`, top: 0, bottom: 0, borderLeft: `1px solid ${lineColor}` }} />;
                                     })}
                                   </div>
                                 ) : null}
