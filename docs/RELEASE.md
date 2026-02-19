@@ -86,6 +86,33 @@ cd ../ui && pnpm publish --access public
 cd ../cli && pnpm publish --access public
 ```
 
+### GitHub Actions (recommended)
+
+Use the workflow: `.github/workflows/release.yml`
+
+- Trigger: **Actions → Release → Run workflow**
+- Inputs:
+  - `dry_run` (default `true`)
+  - `npm_tag` (default `latest`)
+  - `create_git_tag` (default `true`)
+
+Trusted Publishing setup (npm):
+
+- Configure **Trusted Publisher** in npm for each package:
+  - `@agent-lens/server`
+  - `@agent-lens/ui`
+  - `agent-lens`
+- Use this GitHub repository + workflow as trusted source
+- No `NPM_TOKEN` secret is required in this model
+
+The workflow uses GitHub OIDC and runs:
+
+1. `pnpm release:check`
+2. pack artifacts with `pnpm pack`
+3. publish in order via `npm publish --provenance`:
+   - `@agent-lens/server` → `@agent-lens/ui` → `agent-lens`
+4. optional git tag creation: `vX.Y.Z`
+
 ---
 
 ## 5) Post-publish verification
