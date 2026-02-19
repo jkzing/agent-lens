@@ -20,8 +20,7 @@ on:
         default: true
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -67,6 +66,9 @@ jobs:
     needs: verify
     if: ${{ inputs.dry_run == false }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment: release
     steps:
       - name: Checkout
@@ -132,6 +134,8 @@ jobs:
     needs: [verify, publish]
     if: ${{ inputs.dry_run == false && inputs.create_git_tag == true }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
