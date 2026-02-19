@@ -1,8 +1,10 @@
 {
   "name": "@agent-lens/ui",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "rsbuild dev --port 5173",
     "build": "rsbuild build",
@@ -31,5 +33,15 @@
     "@types/react-dom": "^19.1.7",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18"
+  },
+  "author": "jkzing",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jkzing/agent-lens.git"
+  },
+  "homepage": "https://github.com/jkzing/agent-lens#readme",
+  "bugs": {
+    "url": "https://github.com/jkzing/agent-lens/issues"
   }
 }

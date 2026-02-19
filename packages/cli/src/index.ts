@@ -3,15 +3,12 @@ import { Command } from 'commander';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// After `npm install`:  dist/index.js  server-dist/index.js  ui-dist/
-// Both server-dist and ui-dist are siblings of dist/ inside the CLI package.
-const serverEntry = path.resolve(__dirname, '../server-dist/index.js');
-const uiDist     = path.resolve(__dirname, '../ui-dist');
+const require = createRequire(import.meta.url);
+const serverEntry = require.resolve('@agent-lens/server');
+const uiPackageJson = require.resolve('@agent-lens/ui/package.json');
+const uiDist = path.join(path.dirname(uiPackageJson), 'dist');
 
 function openBrowser(url: string) {
   const platform = process.platform;
@@ -38,8 +35,12 @@ async function main() {
       const port = String(opts.port || '4318');
 
       if (!fs.existsSync(serverEntry)) {
-        console.error(`[agent-lens] server not found at: ${serverEntry}`);
-        console.error('[agent-lens] if running from source, run "pnpm prepack" first');
+        console.error(`[agent-lens] server entry not found: ${serverEntry}`);
+        process.exit(1);
+      }
+
+      if (!fs.existsSync(uiDist)) {
+        console.error(`[agent-lens] UI dist not found: ${uiDist}`);
         process.exit(1);
       }
 
