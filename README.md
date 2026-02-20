@@ -17,6 +17,13 @@ cd ~/w/gh/jkzing/agent-lens
 pnpm install
 ```
 
+Optional quality guardrail check for entry-file budgets:
+
+```bash
+pnpm check:entry-size         # warn-only
+pnpm check:entry-size:strict  # fail on budget violation
+```
+
 Run server + UI in two terminals:
 
 ```bash

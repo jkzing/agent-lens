@@ -1,6 +1,6 @@
 # Refactor Plan (Debt Paydown + Long-term Maintainability)
 
-Status: Drafted and active
+Status: Active (Phase 1-3 complete, Phase 4 in progress)
 Owner: Lumi
 Execution model: small, mergeable PR slices (no big-bang rewrite)
 
@@ -62,6 +62,12 @@ This slows review, increases regression risk, and makes multi-agent collaboratio
 ---
 
 ## Execution phases
+
+Progress snapshot (2026-02-20):
+- Phase 1 complete (PR #17, #18, #19, #20)
+- Phase 2 complete (PR #21, #22, #23)
+- Phase 3 complete (PR #25, #26, #27, #28, #29, #30, #31)
+- Phase 4 started (tests/quality guardrails)
 
 ## Phase 0 — Baseline and safety rails
 
@@ -146,4 +152,4 @@ Naming convention examples:
 
 ## Immediate next step
 
-Start **Phase 1 / PR-1**: extract server DB bootstrap + schema helpers with no behavior change.
+Continue **Phase 4 / PR-2**: expand focused unit coverage for extracted pure modules and keep behavior-parity validation in each PR.
