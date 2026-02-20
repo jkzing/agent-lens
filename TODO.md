@@ -39,10 +39,10 @@
 - [x] Phase 1: server decomposition (`index.ts` -> config/db/routes/services split)
 - [x] Phase 2: CLI decomposition (`index.ts` -> command/config/runtime/launcher split)
 - [x] Phase 3: UI decomposition (`App.tsx` -> feature modules + hooks)
-- [ ] Phase 4: tests and quality guardrails for extracted modules
+- [x] Phase 4: tests and quality guardrails for extracted modules
   - [x] PR-1: add entry-file size budget checks (`check:entry-size`) and wire into release preflight
-  - [ ] PR-2: expand focused unit coverage for extracted pure modules
-  - [ ] PR-3: add minimal integration smoke checks and document validation matrix
+  - [x] PR-2: expand focused unit coverage for extracted pure modules (merged: #33)
+  - [x] PR-3: add minimal integration smoke checks and document validation matrix (`docs/VALIDATION_MATRIX.md`)
 
 ## M2 · Agent context mapping
 

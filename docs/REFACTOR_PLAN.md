@@ -1,6 +1,6 @@
 # Refactor Plan (Debt Paydown + Long-term Maintainability)
 
-Status: Active (Phase 1-3 complete, Phase 4 in progress)
+Status: Active (Phase 1-4 complete)
 Owner: Lumi
 Execution model: small, mergeable PR slices (no big-bang rewrite)
 
@@ -63,11 +63,11 @@ This slows review, increases regression risk, and makes multi-agent collaboratio
 
 ## Execution phases
 
-Progress snapshot (2026-02-20):
+Progress snapshot (2026-02-21):
 - Phase 1 complete (PR #17, #18, #19, #20)
 - Phase 2 complete (PR #21, #22, #23)
 - Phase 3 complete (PR #25, #26, #27, #28, #29, #30, #31)
-- Phase 4 started (tests/quality guardrails)
+- Phase 4 complete (PR-1 complete, PR-2 merged via #33, PR-3 in this PR)
 
 ## Phase 0 — Baseline and safety rails
 
@@ -121,6 +121,7 @@ Done criteria:
 Done criteria:
 - Critical extracted modules covered by tests
 - CI remains stable and release workflow unaffected
+- Validation matrix documented (`docs/VALIDATION_MATRIX.md`) and used in PR/release checks
 
 ---
 
@@ -152,4 +153,4 @@ Naming convention examples:
 
 ## Immediate next step
 
-Continue **Phase 4 / PR-2**: expand focused unit coverage for extracted pure modules and keep behavior-parity validation in each PR.
+Start the next roadmap slice (post-refactor feature work), using `docs/VALIDATION_MATRIX.md` as the default PR/pre-release check baseline.
