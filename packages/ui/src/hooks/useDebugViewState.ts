@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { buildEventTypeCoverage, buildEventTypeOptions, buildSpanEventTypeOptions, filterSpansForTimeline, filterTracesByEventType } from '@/features/debug/traceFilters';
 import { getTimelineTicks } from '@/features/debug/utils';
 import type { SpanRow, TraceSummary } from '@/hooks/useTraceData';
 
@@ -237,15 +238,18 @@ export function useDebugViewState({
   setSelectedSpanId,
 }: UseDebugViewStateInput) {
   const [traceSearch, setTraceSearch] = useState('');
+  const [traceEventTypeFilter, setTraceEventTypeFilter] = useState('all');
   const [spanSearch, setSpanSearch] = useState('');
+  const [spanEventTypeFilter, setSpanEventTypeFilter] = useState('all');
   const [tracesCollapsed, setTracesCollapsed] = useState(false);
   const [detailCollapsed, setDetailCollapsed] = useState(false);
 
   useEffect(() => {
     setSpanSearch('');
+    setSpanEventTypeFilter('all');
   }, [selectedTraceId]);
 
-  const filteredTraces = useMemo(
+  const tracesBeforeEventTypeFilter = useMemo(
     () =>
       traces.filter((trace) => {
         if (!withinRange(trace.last_received_at, range)) return false;
@@ -256,6 +260,20 @@ export function useDebugViewState({
         return (trace.root_span_name || '').toLowerCase().includes(traceSearch.trim().toLowerCase());
       }),
     [traces, range, agentFilter, traceSearch]
+  );
+
+  const traceEventTypeOptions = useMemo(() => buildEventTypeOptions(tracesBeforeEventTypeFilter), [tracesBeforeEventTypeFilter]);
+  const traceEventTypeCoverage = useMemo(() => buildEventTypeCoverage(tracesBeforeEventTypeFilter), [tracesBeforeEventTypeFilter]);
+
+  useEffect(() => {
+    if (traceEventTypeFilter !== 'all' && !traceEventTypeOptions.includes(traceEventTypeFilter)) {
+      setTraceEventTypeFilter('all');
+    }
+  }, [traceEventTypeFilter, traceEventTypeOptions]);
+
+  const filteredTraces = useMemo(
+    () => filterTracesByEventType(tracesBeforeEventTypeFilter, traceEventTypeFilter),
+    [tracesBeforeEventTypeFilter, traceEventTypeFilter]
   );
 
   const tracesByAgent = useMemo(() => {
@@ -283,30 +301,18 @@ export function useDebugViewState({
 
   const selectedTrace = filteredTraces.find((t) => t.trace_id === selectedTraceId) || null;
 
-  const filteredSpans = useMemo(() => {
-    const query = spanSearch.trim().toLowerCase();
-    if (!query) return spans;
+  const spanEventTypeOptions = useMemo(() => buildSpanEventTypeOptions(spans), [spans]);
 
-    const bySpanId = new Map<string, SpanRow>();
-    for (const span of spans) {
-      if (span.span_id) bySpanId.set(span.span_id, span);
+  useEffect(() => {
+    if (spanEventTypeFilter !== 'all' && !spanEventTypeOptions.includes(spanEventTypeFilter)) {
+      setSpanEventTypeFilter('all');
     }
+  }, [spanEventTypeFilter, spanEventTypeOptions]);
 
-    const visibleIds = new Set<number>();
-    for (const span of spans) {
-      const spanName = (span.name || '').toLowerCase();
-      if (!spanName.includes(query)) continue;
-
-      let cursor: SpanRow | null = span;
-      while (cursor) {
-        visibleIds.add(cursor.id);
-        if (!cursor.parent_span_id) break;
-        cursor = bySpanId.get(cursor.parent_span_id) || null;
-      }
-    }
-
-    return spans.filter((span) => visibleIds.has(span.id));
-  }, [spans, spanSearch]);
+  const filteredSpans = useMemo(
+    () => filterSpansForTimeline(spans, spanSearch, spanEventTypeFilter),
+    [spans, spanSearch, spanEventTypeFilter]
+  );
 
   useEffect(() => {
     if (filteredSpans.length === 0) {
@@ -398,8 +404,15 @@ export function useDebugViewState({
   return {
     traceSearch,
     setTraceSearch,
+    traceEventTypeFilter,
+    setTraceEventTypeFilter,
+    traceEventTypeOptions,
+    traceEventTypeCoverage,
     spanSearch,
     setSpanSearch,
+    spanEventTypeFilter,
+    setSpanEventTypeFilter,
+    spanEventTypeOptions,
     tracesCollapsed,
     setTracesCollapsed,
     detailCollapsed,

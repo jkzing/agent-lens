@@ -25,6 +25,10 @@ type DebugPanelProps = {
   loading: boolean;
   traceSearch: string;
   setTraceSearch: (value: string) => void;
+  traceEventTypeFilter: string;
+  setTraceEventTypeFilter: (value: string) => void;
+  traceEventTypeOptions: string[];
+  traceEventTypeCoverage: { rows: Array<{ eventType: string; count: number }>; uniqueEventTypes: number };
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
   selectedTrace: TraceSummary | null;
@@ -32,6 +36,9 @@ type DebugPanelProps = {
   exportTrace: (traceId: string, format: 'json' | 'csv') => Promise<void>;
   spanSearch: string;
   setSpanSearch: (value: string) => void;
+  spanEventTypeFilter: string;
+  setSpanEventTypeFilter: (value: string) => void;
+  spanEventTypeOptions: string[];
   filteredSpans: SpanRow[];
   spans: SpanRow[];
   selectedSpanId: number | null;
@@ -65,6 +72,10 @@ export function DebugPanel({
   loading,
   traceSearch,
   setTraceSearch,
+  traceEventTypeFilter,
+  setTraceEventTypeFilter,
+  traceEventTypeOptions,
+  traceEventTypeCoverage,
   selectedTraceId,
   setSelectedTraceId,
   selectedTrace,
@@ -72,6 +83,9 @@ export function DebugPanel({
   exportTrace,
   spanSearch,
   setSpanSearch,
+  spanEventTypeFilter,
+  setSpanEventTypeFilter,
+  spanEventTypeOptions,
   filteredSpans,
   spans,
   selectedSpanId,
@@ -109,6 +123,10 @@ export function DebugPanel({
           loading={loading}
           traceSearch={traceSearch}
           setTraceSearch={setTraceSearch}
+          traceEventTypeFilter={traceEventTypeFilter}
+          setTraceEventTypeFilter={setTraceEventTypeFilter}
+          traceEventTypeOptions={traceEventTypeOptions}
+          traceEventTypeCoverage={traceEventTypeCoverage}
           selectedTraceId={selectedTraceId}
           setSelectedTraceId={setSelectedTraceId}
           formatDurationNs={formatDurationNs}
@@ -132,6 +150,9 @@ export function DebugPanel({
           exportTrace={exportTrace}
           spanSearch={spanSearch}
           setSpanSearch={setSpanSearch}
+          spanEventTypeFilter={spanEventTypeFilter}
+          setSpanEventTypeFilter={setSpanEventTypeFilter}
+          spanEventTypeOptions={spanEventTypeOptions}
           filteredSpans={filteredSpans}
           spans={spans}
           selectedSpanId={selectedSpanId}

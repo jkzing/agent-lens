@@ -61,6 +61,10 @@ describe('DebugPanel', () => {
         loading={false}
         traceSearch=""
         setTraceSearch={() => {}}
+        traceEventTypeFilter="all"
+        setTraceEventTypeFilter={() => {}}
+        traceEventTypeOptions={[trace.root_span_name]}
+        traceEventTypeCoverage={{ rows: [{ eventType: trace.root_span_name, count: 1 }], uniqueEventTypes: 1 }}
         selectedTraceId={trace.trace_id}
         setSelectedTraceId={() => {}}
         selectedTrace={trace}
@@ -68,6 +72,9 @@ describe('DebugPanel', () => {
         exportTrace={async () => {}}
         spanSearch=""
         setSpanSearch={() => {}}
+        spanEventTypeFilter="all"
+        setSpanEventTypeFilter={() => {}}
+        spanEventTypeOptions={[span.name || 'unknown']}
         filteredSpans={[span]}
         spans={[span]}
         selectedSpanId={span.id}
@@ -119,6 +126,10 @@ describe('DebugPanel', () => {
         loading={false}
         traceSearch=""
         setTraceSearch={(value) => traceSearchCalls.push(value)}
+        traceEventTypeFilter="all"
+        setTraceEventTypeFilter={() => {}}
+        traceEventTypeOptions={[trace.root_span_name]}
+        traceEventTypeCoverage={{ rows: [{ eventType: trace.root_span_name, count: 1 }], uniqueEventTypes: 1 }}
         selectedTraceId={null}
         setSelectedTraceId={(traceId) => selectedTraceCalls.push(traceId)}
         selectedTrace={trace}
@@ -126,6 +137,9 @@ describe('DebugPanel', () => {
         exportTrace={async () => {}}
         spanSearch=""
         setSpanSearch={(value) => spanSearchCalls.push(value)}
+        spanEventTypeFilter="all"
+        setSpanEventTypeFilter={() => {}}
+        spanEventTypeOptions={[span.name || 'unknown']}
         filteredSpans={[span]}
         spans={[span]}
         selectedSpanId={null}

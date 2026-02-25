@@ -31,6 +31,9 @@ type TraceTimelinePanelProps = {
   exportTrace: (traceId: string, format: 'json' | 'csv') => Promise<void>;
   spanSearch: string;
   setSpanSearch: (value: string) => void;
+  spanEventTypeFilter: string;
+  setSpanEventTypeFilter: (value: string) => void;
+  spanEventTypeOptions: string[];
   filteredSpans: SpanRow[];
   spans: SpanRow[];
   selectedSpanId: number | null;
@@ -70,6 +73,9 @@ export function TraceTimelinePanel({
   exportTrace,
   spanSearch,
   setSpanSearch,
+  spanEventTypeFilter,
+  setSpanEventTypeFilter,
+  spanEventTypeOptions,
   filteredSpans,
   spans,
   selectedSpanId,
@@ -131,12 +137,32 @@ export function TraceTimelinePanel({
             placeholder="Filter spans by name..."
             className="max-w-sm"
           />
-          {spanSearch.trim() ? (
+          <select
+            className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            value={spanEventTypeFilter}
+            onChange={(e) => setSpanEventTypeFilter(e.target.value)}
+            aria-label="Filter timeline by span event type"
+          >
+            <option value="all">All span types</option>
+            {spanEventTypeOptions.map((eventType) => (
+              <option key={eventType} value={eventType}>
+                {eventType}
+              </option>
+            ))}
+          </select>
+          {(spanSearch.trim() || spanEventTypeFilter !== 'all') ? (
             <>
               <span className="text-xs text-muted-foreground">
                 showing {filteredSpans.length}/{spans.length}
               </span>
-              <Button size="sm" variant="ghost" onClick={() => setSpanSearch('')}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setSpanSearch('');
+                  setSpanEventTypeFilter('all');
+                }}
+              >
                 Clear
               </Button>
             </>
