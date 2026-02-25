@@ -46,8 +46,15 @@ export default function App() {
   const {
     traceSearch,
     setTraceSearch,
+    traceEventTypeFilter,
+    setTraceEventTypeFilter,
+    traceEventTypeOptions,
+    traceEventTypeCoverage,
     spanSearch,
     setSpanSearch,
+    spanEventTypeFilter,
+    setSpanEventTypeFilter,
+    spanEventTypeOptions,
     tracesCollapsed,
     setTracesCollapsed,
     detailCollapsed,
@@ -177,6 +184,10 @@ export default function App() {
                 loading={loading}
                 traceSearch={traceSearch}
                 setTraceSearch={setTraceSearch}
+                traceEventTypeFilter={traceEventTypeFilter}
+                setTraceEventTypeFilter={setTraceEventTypeFilter}
+                traceEventTypeOptions={traceEventTypeOptions}
+                traceEventTypeCoverage={traceEventTypeCoverage}
                 selectedTraceId={selectedTraceId}
                 setSelectedTraceId={setSelectedTraceId}
                 selectedTrace={selectedTrace}
@@ -184,6 +195,9 @@ export default function App() {
                 exportTrace={exportTrace}
                 spanSearch={spanSearch}
                 setSpanSearch={setSpanSearch}
+                spanEventTypeFilter={spanEventTypeFilter}
+                setSpanEventTypeFilter={setSpanEventTypeFilter}
+                spanEventTypeOptions={spanEventTypeOptions}
                 filteredSpans={filteredSpans}
                 spans={spans}
                 selectedSpanId={selectedSpanId}

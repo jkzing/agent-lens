@@ -71,6 +71,9 @@ describe('TraceTimelinePanel', () => {
           exportTrace={async () => {}}
           spanSearch="tool"
           setSpanSearch={(v) => setSpanSearchCalls.push(v)}
+          spanEventTypeFilter="all"
+          setSpanEventTypeFilter={() => {}}
+          spanEventTypeOptions={["root", "tool-call"]}
           filteredSpans={[spans[1]]}
           spans={spans}
           selectedSpanId={null}
@@ -94,9 +97,9 @@ describe('TraceTimelinePanel', () => {
     );
 
     expect(screen.getByTestId('trace-timeline-panel')).toBeTruthy();
-    expect(screen.getByText('tool-call')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /tool-call/i })).toBeTruthy();
 
-    fireEvent.click(screen.getByText('tool-call'));
+    fireEvent.click(screen.getByRole('button', { name: /tool-call/i }));
     expect(selected).toEqual([2]);
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));

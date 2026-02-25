@@ -43,6 +43,10 @@ describe('TraceListPanel', () => {
         loading={false}
         traceSearch=""
         setTraceSearch={() => {}}
+        traceEventTypeFilter="all"
+        setTraceEventTypeFilter={() => {}}
+        traceEventTypeOptions={['root span']}
+        traceEventTypeCoverage={{ rows: [{ eventType: 'root span', count: 1 }], uniqueEventTypes: 1 }}
         setSelectedTraceId={onSelect}
         formatDurationNs={(n) => String(n)}
         toNumber={(v) => Number(v ?? 0)}
@@ -50,9 +54,9 @@ describe('TraceListPanel', () => {
     );
 
     expect(screen.getByTestId('trace-list-panel')).toBeTruthy();
-    expect(screen.getByText('root span')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /root span/i })).toBeTruthy();
 
-    fireEvent.click(screen.getByText('root span'));
+    fireEvent.click(screen.getByRole('button', { name: /root span/i }));
     expect(calls).toEqual(['trace-1']);
   });
 });
