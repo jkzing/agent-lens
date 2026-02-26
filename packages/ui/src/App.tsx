@@ -8,6 +8,7 @@ import { OverviewPanel } from '@/features/overview/OverviewPanel';
 import { formatDurationNs } from '@/features/overview/utils';
 import { pickSelectedOverviewStep, useOverviewData } from '@/features/overview/useOverviewData';
 import { SessionTimelinePanel } from '@/features/sessions/SessionTimelinePanel';
+import { resolveTraceBridge } from '@/features/sessions/traceBridge';
 import { detectSpanType, parseJsonObject, toNumber, useDebugViewState } from '@/hooks/useDebugViewState';
 import { useSessionTimelineData } from '@/hooks/useSessionTimelineData';
 import { useTraceData } from '@/hooks/useTraceData';
@@ -61,6 +62,8 @@ export default function App() {
     }
     return Array.from(set).sort();
   }, [traces]);
+
+  const traceIdSet = useMemo(() => new Set(traces.map((trace) => trace.trace_id)), [traces]);
 
   const {
     traceSearch,
@@ -258,8 +261,14 @@ export default function App() {
                 timelineLoading={sessionTimelineLoading}
                 timelineError={sessionTimelineError}
                 onOpenTrace={(traceId) => {
-                  setSelectedTraceId(traceId);
                   setActiveTab('debug');
+                  const resolution = resolveTraceBridge(traceId, traceIdSet);
+                  if (!resolution.ok) {
+                    setError(resolution.message);
+                    return;
+                  }
+                  setError(null);
+                  setSelectedTraceId(resolution.traceId);
                 }}
               />
             </TabsContent>

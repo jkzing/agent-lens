@@ -66,7 +66,7 @@ describe('useSessionTimelineData', () => {
     expect(result.current.eventTypeOptions).toEqual(['message.sent']);
   });
 
-  it('re-loads overview when filter query changes', async () => {
+  it('debounces overview reload when query changes', async () => {
     const requested: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -74,7 +74,20 @@ describe('useSessionTimelineData', () => {
       if (url.startsWith('/api/sessions/overview?')) {
         return {
           ok: true,
-          json: async () => ({ items: [], pagination: { limit: 50, offset: 0, total: 0 } })
+          json: async () => ({
+            items: [
+              {
+                session_key: 'sess-1',
+                first_seen_unix_nano: 1,
+                last_seen_unix_nano: 2,
+                span_count: 2,
+                trace_count: 1,
+                event_types: ['message.sent'],
+                channel: 'telegram'
+              }
+            ],
+            pagination: { limit: 50, offset: 0, total: 1 }
+          })
         } as Response;
       }
       return {
@@ -86,11 +99,17 @@ describe('useSessionTimelineData', () => {
     const { result } = renderHook(() => useSessionTimelineData());
     await waitFor(() => expect(result.current.overviewLoading).toBe(false));
 
+    const initialCount = requested.filter((url) => url.startsWith('/api/sessions/overview?')).length;
+
     act(() => result.current.setQuery('nyx'));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const beforeDebounceCount = requested.filter((url) => url.startsWith('/api/sessions/overview?')).length;
+    expect(beforeDebounceCount).toBe(initialCount);
 
     await waitFor(() => {
       const matched = requested.filter((url) => url.startsWith('/api/sessions/overview?') && url.includes('q=nyx'));
       expect(matched.length).toBeGreaterThan(0);
-    });
+    }, { timeout: 1000 });
   });
 });

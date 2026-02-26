@@ -33,9 +33,11 @@ type Pagination = {
 
 const DEFAULT_OVERVIEW_LIMIT = 50;
 const DEFAULT_TIMELINE_LIMIT = 200;
+const QUERY_DEBOUNCE_MS = 250;
 
 export function useSessionTimelineData() {
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [eventTypeFilter, setEventTypeFilter] = useState('all');
 
   const [overviewItems, setOverviewItems] = useState<SessionOverviewItem[]>([]);
@@ -50,14 +52,20 @@ export function useSessionTimelineData() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const loadOverview = useCallback(async () => {
     setOverviewLoading(true);
     setOverviewError(null);
+
     const params = new URLSearchParams({
       limit: String(overviewPagination.limit),
       offset: String(overviewPagination.offset)
     });
-    if (query.trim()) params.set('q', query.trim());
+    if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim());
     if (eventTypeFilter !== 'all') params.set('eventType', eventTypeFilter);
 
     const res = await fetch(`/api/sessions/overview?${params.toString()}`);
@@ -78,7 +86,7 @@ export function useSessionTimelineData() {
       if (prev && items.some((item) => item.session_key === prev)) return prev;
       return items[0]?.session_key ?? null;
     });
-  }, [eventTypeFilter, overviewPagination.limit, overviewPagination.offset, query]);
+  }, [debouncedQuery, eventTypeFilter, overviewPagination.limit, overviewPagination.offset]);
 
   const loadTimeline = useCallback(async (sessionKey: string) => {
     setTimelineLoading(true);
