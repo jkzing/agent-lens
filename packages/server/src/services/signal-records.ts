@@ -52,7 +52,7 @@ export function listMetricPayloadRecords(db: DatabaseSync, limit: number, offset
 
   const items = db
     .prepare(
-      `SELECT id, received_at, content_type, parse_status, parse_error, item_count, service_name, session_key, metric_names
+      `SELECT id, received_at, content_type, parse_status, parse_error, item_count, service_name, session_key, metric_names, payload
        FROM metric_payloads
        ${whereSql}
        ORDER BY id DESC
@@ -68,6 +68,7 @@ export function listMetricPayloadRecords(db: DatabaseSync, limit: number, offset
     service_name: string | null;
     session_key: string | null;
     metric_names: string | null;
+    payload: string | null;
   }>;
 
   const totalRow = db
@@ -102,7 +103,7 @@ export function listLogPayloadRecords(db: DatabaseSync, limit: number, offset: n
 
   const items = db
     .prepare(
-      `SELECT id, received_at, content_type, parse_status, parse_error, item_count, service_name, session_key, severity_text, severity_number
+      `SELECT id, received_at, content_type, parse_status, parse_error, item_count, service_name, session_key, severity_text, severity_number, payload
        FROM log_payloads
        ${whereSql}
        ORDER BY id DESC
@@ -119,6 +120,7 @@ export function listLogPayloadRecords(db: DatabaseSync, limit: number, offset: n
     session_key: string | null;
     severity_text: string | null;
     severity_number: number | null;
+    payload: string | null;
   }>;
 
   const totalRow = db
