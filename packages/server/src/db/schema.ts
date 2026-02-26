@@ -1,4 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { extractSessionFields } from '../lib/session-extract.js';
+
+const DERIVED_COLUMNS = [
+  'event_type',
+  'session_key',
+  'session_id',
+  'channel',
+  'state',
+  'outcome'
+] as const;
 
 export function bootstrapSchema(db: DatabaseSync) {
   db.exec(`
@@ -18,13 +28,22 @@ CREATE TABLE IF NOT EXISTS spans (
   status TEXT,
   resource_attributes TEXT,
   events TEXT,
+  event_type TEXT,
+  session_key TEXT,
+  session_id TEXT,
+  channel TEXT,
+  state TEXT,
+  outcome TEXT,
   payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
+CREATE INDEX IF NOT EXISTS idx_spans_session_key_start ON spans(session_key, CAST(start_time_unix_nano AS INTEGER), id);
+CREATE INDEX IF NOT EXISTS idx_spans_channel ON spans(channel);
+CREATE INDEX IF NOT EXISTS idx_spans_event_type_start_time ON spans(event_type, CAST(start_time_unix_nano AS INTEGER));
 
--- PR4 hardening: expression indexes for session APIs
-CREATE INDEX IF NOT EXISTS idx_spans_session_key_start ON spans(
+-- PR4 hardening: expression indexes remain for compatibility while rows are progressively backfilled.
+CREATE INDEX IF NOT EXISTS idx_spans_session_key_start_expr ON spans(
   COALESCE(
     json_extract(attributes, '$."openclaw.sessionKey"'),
     json_extract(attributes, '$."openclaw.sessionId"'),
@@ -72,4 +91,65 @@ CREATE INDEX IF NOT EXISTS idx_spans_name_start_time ON spans(
   ensureColumn('status', 'TEXT');
   ensureColumn('resource_attributes', 'TEXT');
   ensureColumn('events', 'TEXT');
+
+  ensureColumn('event_type', 'TEXT');
+  ensureColumn('session_key', 'TEXT');
+  ensureColumn('session_id', 'TEXT');
+  ensureColumn('channel', 'TEXT');
+  ensureColumn('state', 'TEXT');
+  ensureColumn('outcome', 'TEXT');
+}
+
+export function backfillDerivedSpanColumns(db: DatabaseSync, limit = 1000): number {
+  if (limit <= 0) return 0;
+
+  const rows = db
+    .prepare(
+      `SELECT id, name, attributes, resource_attributes
+       FROM spans
+       WHERE ${DERIVED_COLUMNS.map((column) => `${column} IS NULL`).join(' OR ')}
+       ORDER BY id ASC
+       LIMIT ?`
+    )
+    .all(limit) as Array<{
+    id: number;
+    name: string | null;
+    attributes: string | null;
+    resource_attributes: string | null;
+  }>;
+
+  if (rows.length === 0) return 0;
+
+  const update = db.prepare(`
+    UPDATE spans
+    SET event_type = ?,
+        session_key = ?,
+        session_id = ?,
+        channel = ?,
+        state = ?,
+        outcome = ?
+    WHERE id = ?
+  `);
+
+  db.exec('BEGIN');
+  try {
+    for (const row of rows) {
+      const derived = extractSessionFields(row.attributes, row.resource_attributes);
+      update.run(
+        row.name?.trim() || null,
+        derived.sessionKey,
+        derived.sessionId,
+        derived.channel,
+        derived.state,
+        derived.outcome,
+        row.id
+      );
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+
+  return rows.length;
 }

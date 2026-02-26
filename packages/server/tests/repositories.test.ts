@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createDbClient } from '../src/db/client.js';
-import { bootstrapSchema } from '../src/db/schema.js';
+import { backfillDerivedSpanColumns, bootstrapSchema } from '../src/db/schema.js';
 import { listSpansPage } from '../src/repositories/spansRepo.js';
 import { countTraceSpans, countTraces, listTraceSpansForExport, listTraceSpansPage, listTracesPageBase } from '../src/repositories/tracesRepo.js';
 
@@ -108,8 +108,56 @@ test('schema creates session-query hardening indexes', () => {
     const indexNames = new Set(indexRows.map((row) => row.name));
 
     assert.ok(indexNames.has('idx_spans_session_key_start'));
+    assert.ok(indexNames.has('idx_spans_channel'));
+    assert.ok(indexNames.has('idx_spans_event_type_start_time'));
+    assert.ok(indexNames.has('idx_spans_session_key_start_expr'));
     assert.ok(indexNames.has('idx_spans_channel_expr'));
     assert.ok(indexNames.has('idx_spans_name_start_time'));
+  } finally {
+    runtime.cleanup();
+  }
+});
+
+test('backfillDerivedSpanColumns backfills bounded rows', () => {
+  const runtime = createTestDb();
+  try {
+    const insert = createInsertSpan(runtime.db);
+    insert.run(
+      '2026-02-19T00:00:00.000Z',
+      'trace-backfill',
+      'span-1',
+      null,
+      'openclaw.agent.finished',
+      1,
+      '10',
+      '20',
+      10,
+      JSON.stringify({ 'openclaw.sessionKey': 'sess-1', channel: 'telegram', state: 'ok', outcome: 'success' }),
+      0,
+      null,
+      '{}',
+      null,
+      '{}'
+    );
+
+    const updated = backfillDerivedSpanColumns(runtime.db, 1);
+    assert.equal(updated, 1);
+
+    const row = runtime.db
+      .prepare('SELECT event_type, session_key, channel, state, outcome FROM spans WHERE trace_id = ?')
+      .get('trace-backfill') as {
+      event_type: string | null;
+      session_key: string | null;
+      channel: string | null;
+      state: string | null;
+      outcome: string | null;
+    };
+
+    assert.equal(row.event_type, 'openclaw.agent.finished');
+    assert.equal(row.session_key, 'sess-1');
+    assert.equal(row.channel, 'telegram');
+    assert.equal(row.state, 'ok');
+    assert.equal(row.outcome, 'success');
   } finally {
     runtime.cleanup();
   }

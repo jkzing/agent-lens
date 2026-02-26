@@ -40,8 +40,14 @@ function createInsertSpan(db: ReturnType<typeof createDbClient>) {
       status,
       resource_attributes,
       events,
+      event_type,
+      session_key,
+      session_id,
+      channel,
+      state,
+      outcome,
       payload
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 }
 
@@ -91,10 +97,20 @@ test('ingestTraceRequest handles invalid and valid JSON payload paths', async ()
     );
 
     assert.deepEqual(valid, { rejectedSpans: 0, errorMessage: '' });
-    const row = runtime.db.prepare('SELECT COUNT(*) as count FROM spans WHERE trace_id = ?').get('00112233445566778899aabbccddeeff') as {
+    const row = runtime.db
+      .prepare(
+        'SELECT COUNT(*) as count, event_type, session_key, channel FROM spans WHERE trace_id = ? GROUP BY event_type, session_key, channel'
+      )
+      .get('00112233445566778899aabbccddeeff') as {
       count: number;
+      event_type: string | null;
+      session_key: string | null;
+      channel: string | null;
     };
     assert.equal(Number(row.count), 1);
+    assert.equal(row.event_type, 'op');
+    assert.equal(row.session_key, null);
+    assert.equal(row.channel, null);
   } finally {
     runtime.cleanup();
   }
@@ -119,6 +135,12 @@ test('listTraces returns pagination-safe shape and aggregated fields', () => {
       null,
       JSON.stringify({ 'service.name': 'svc-a' }),
       null,
+      'root-a',
+      null,
+      null,
+      null,
+      null,
+      null,
       '{}'
     );
     insert.run(
@@ -135,6 +157,12 @@ test('listTraces returns pagination-safe shape and aggregated fields', () => {
       0,
       null,
       JSON.stringify({ 'service.name': 'svc-b' }),
+      null,
+      'root-b',
+      null,
+      null,
+      null,
+      null,
       null,
       '{}'
     );
@@ -170,6 +198,12 @@ test('exportTrace builds csv baseline content', () => {
       0,
       null,
       '{}',
+      null,
+      'root',
+      null,
+      null,
+      null,
+      null,
       null,
       '{}'
     );

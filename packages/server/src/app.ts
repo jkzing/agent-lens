@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createDbClient } from './db/client.js';
-import { bootstrapSchema } from './db/schema.js';
+import { backfillDerivedSpanColumns, bootstrapSchema } from './db/schema.js';
 import { decodeOtlpProtobufTraceRequest, extractSpans } from './otlp.js';
 import { registerRoutes } from './routes/index.js';
 
@@ -33,9 +33,20 @@ export function createApp(dbPath: string): AppRuntime {
       status,
       resource_attributes,
       events,
+      event_type,
+      session_key,
+      session_id,
+      channel,
+      state,
+      outcome,
       payload
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+
+  const maxBackfillRows = Number(process.env.AGENT_LENS_DERIVED_BACKFILL_LIMIT || '1000');
+  if (Number.isFinite(maxBackfillRows) && maxBackfillRows > 0) {
+    backfillDerivedSpanColumns(db, Math.floor(maxBackfillRows));
+  }
 
   registerRoutes(app, {
     db,

@@ -19,6 +19,7 @@ export type SessionTimelineQuery = {
 
 function sessionExpr(alias = 's') {
   return `COALESCE(
+    ${alias}.session_key,
     json_extract(${alias}.attributes, '$."openclaw.sessionKey"'),
     json_extract(${alias}.attributes, '$."openclaw.sessionId"'),
     json_extract(${alias}.resource_attributes, '$."openclaw.sessionKey"'),
@@ -28,11 +29,16 @@ function sessionExpr(alias = 's') {
 
 function channelExpr(alias = 's') {
   return `COALESCE(
+    ${alias}.channel,
     json_extract(${alias}.attributes, '$."openclaw.channel"'),
     json_extract(${alias}.attributes, '$.channel'),
     json_extract(${alias}.resource_attributes, '$."openclaw.channel"'),
     json_extract(${alias}.resource_attributes, '$.channel')
   )`;
+}
+
+function eventTypeExpr(alias = 's') {
+  return `COALESCE(${alias}.event_type, ${alias}.name)`;
 }
 
 function whereWithFilters(query: SessionOverviewQuery): { where: string; params: Array<string | number> } {
@@ -48,7 +54,7 @@ function whereWithFilters(query: SessionOverviewQuery): { where: string; params:
     params.push(query.channel.trim());
   }
   if (query.eventType && query.eventType.trim()) {
-    clauses.push('s.name = ?');
+    clauses.push(`${eventTypeExpr()} = ?`);
     params.push(query.eventType.trim());
   }
   if (query.fromUnixNano) {
@@ -73,7 +79,7 @@ export function listSessionsOverview(db: DatabaseSync, query: SessionOverviewQue
       SELECT
         s.id,
         s.trace_id,
-        s.name,
+        ${eventTypeExpr()} AS event_type,
         s.start_time_unix_nano,
         s.end_time_unix_nano,
         ${sessionExpr()} AS session_key,
@@ -87,7 +93,7 @@ export function listSessionsOverview(db: DatabaseSync, query: SessionOverviewQue
       MAX(CAST(end_time_unix_nano AS INTEGER)) AS last_seen_unix_nano,
       COUNT(*) AS span_count,
       COUNT(DISTINCT trace_id) AS trace_count,
-      GROUP_CONCAT(DISTINCT name) AS event_types,
+      GROUP_CONCAT(DISTINCT event_type) AS event_types,
       MIN(channel) AS channel
     FROM filtered
     WHERE session_key IS NOT NULL AND session_key != ''
@@ -137,7 +143,7 @@ export function listSessionTimeline(db: DatabaseSync, query: SessionTimelineQuer
   let eventTypeWhere = '';
 
   if (query.eventType && query.eventType.trim()) {
-    eventTypeWhere = 'AND s.name = ?';
+    eventTypeWhere = `AND ${eventTypeExpr()} = ?`;
     params.push(query.eventType.trim());
   }
 
@@ -166,7 +172,7 @@ export function countSessionTimeline(db: DatabaseSync, query: SessionTimelineQue
   let eventTypeWhere = '';
 
   if (query.eventType && query.eventType.trim()) {
-    eventTypeWhere = 'AND s.name = ?';
+    eventTypeWhere = `AND ${eventTypeExpr()} = ?`;
     params.push(query.eventType.trim());
   }
 
