@@ -47,6 +47,7 @@
 ## M2 · Agent context mapping
 
 - [ ] Link traces to chat/session context
+- [ ] Execute Phase 2 Session Timeline plan (`docs/PHASE2_SESSION_TIMELINE_EXECUTION_PLAN.md`)
 - [ ] Cost breakdown by model/provider
 - [ ] Trace export polish (JSON / CSV UX)
 
