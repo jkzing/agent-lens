@@ -64,7 +64,13 @@ describe('DebugPanel', () => {
         traceEventTypeFilter="all"
         setTraceEventTypeFilter={() => {}}
         traceEventTypeOptions={[trace.root_span_name]}
-        traceEventTypeCoverage={{ rows: [{ eventType: trace.root_span_name, count: 1 }], uniqueEventTypes: 1 }}
+        traceEventTypeCoverage={{
+          rows: [{ eventType: trace.root_span_name, count: 1 }],
+          uniqueEventTypes: 1,
+          totalTraces: 1,
+          singleSpanTraceCount: 0,
+          singleSpanRatio: 0,
+        }}
         selectedTraceId={trace.trace_id}
         setSelectedTraceId={() => {}}
         selectedTrace={trace}
@@ -129,7 +135,13 @@ describe('DebugPanel', () => {
         traceEventTypeFilter="all"
         setTraceEventTypeFilter={() => {}}
         traceEventTypeOptions={[trace.root_span_name]}
-        traceEventTypeCoverage={{ rows: [{ eventType: trace.root_span_name, count: 1 }], uniqueEventTypes: 1 }}
+        traceEventTypeCoverage={{
+          rows: [{ eventType: trace.root_span_name, count: 1 }],
+          uniqueEventTypes: 1,
+          totalTraces: 1,
+          singleSpanTraceCount: 0,
+          singleSpanRatio: 0,
+        }}
         selectedTraceId={null}
         setSelectedTraceId={(traceId) => selectedTraceCalls.push(traceId)}
         selectedTrace={trace}

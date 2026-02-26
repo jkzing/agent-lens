@@ -12,7 +12,13 @@ type TraceListPanelProps = {
   traceEventTypeFilter: string;
   setTraceEventTypeFilter: (value: string) => void;
   traceEventTypeOptions: string[];
-  traceEventTypeCoverage: { rows: Array<{ eventType: string; count: number }>; uniqueEventTypes: number };
+  traceEventTypeCoverage: {
+    rows: Array<{ eventType: string; count: number }>;
+    uniqueEventTypes: number;
+    totalTraces: number;
+    singleSpanTraceCount: number;
+    singleSpanRatio: number;
+  };
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
   formatDurationNs: (durationNs: number | null) => string;
@@ -68,9 +74,22 @@ export function TraceListPanel({
             ))}
           </div>
         ) : null}
+        {traceEventTypeCoverage.totalTraces > 0 ? (
+          <div className="flex items-center justify-between gap-2 rounded border border-border/70 bg-muted/20 px-2 py-1 text-[11px] text-muted-foreground">
+            <span>Single-span traces</span>
+            <span className="font-mono">
+              {traceEventTypeCoverage.singleSpanTraceCount}/{traceEventTypeCoverage.totalTraces} ({Math.round(traceEventTypeCoverage.singleSpanRatio * 100)}%)
+            </span>
+          </div>
+        ) : null}
         {traceEventTypeCoverage.uniqueEventTypes > 0 && traceEventTypeCoverage.uniqueEventTypes <= 3 ? (
           <div className="rounded border border-amber-600/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
             ⚠ Instrumentation likely limited upstream.
+          </div>
+        ) : null}
+        {traceEventTypeCoverage.totalTraces >= 5 && traceEventTypeCoverage.singleSpanRatio >= 0.9 ? (
+          <div className="rounded border border-amber-600/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-600 dark:text-amber-400">
+            ⚠ Most traces are single-span. Session narratives may look fragmented.
           </div>
         ) : null}
       </div>

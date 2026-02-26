@@ -8,6 +8,9 @@ export type EventTypeCoverageRow = {
 export type EventTypeCoverage = {
   rows: EventTypeCoverageRow[];
   uniqueEventTypes: number;
+  totalTraces: number;
+  singleSpanTraceCount: number;
+  singleSpanRatio: number;
 };
 
 export function normalizeEventType(value: string | null | undefined): string {
@@ -17,19 +20,26 @@ export function normalizeEventType(value: string | null | undefined): string {
 
 export function buildEventTypeCoverage(traces: TraceSummary[]): EventTypeCoverage {
   const byType = new Map<string, number>();
+  let singleSpanTraceCount = 0;
 
   for (const trace of traces) {
     const eventType = normalizeEventType(trace.root_span_name);
     byType.set(eventType, (byType.get(eventType) ?? 0) + 1);
+    if ((trace.span_count ?? 0) <= 1) singleSpanTraceCount += 1;
   }
 
   const rows = Array.from(byType.entries())
     .map(([eventType, count]) => ({ eventType, count }))
     .sort((a, b) => b.count - a.count || a.eventType.localeCompare(b.eventType));
 
+  const totalTraces = traces.length;
+
   return {
     rows,
     uniqueEventTypes: rows.length,
+    totalTraces,
+    singleSpanTraceCount,
+    singleSpanRatio: totalTraces > 0 ? singleSpanTraceCount / totalTraces : 0,
   };
 }
 

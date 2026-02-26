@@ -50,6 +50,9 @@ describe('traceFilters', () => {
       { eventType: 'agent.run', count: 2 },
       { eventType: 'tool.call', count: 1 },
     ]);
+    expect(coverage.totalTraces).toBe(3);
+    expect(coverage.singleSpanTraceCount).toBe(3);
+    expect(coverage.singleSpanRatio).toBe(1);
     expect(buildEventTypeOptions(traces)).toEqual(['agent.run', 'tool.call']);
   });
 
@@ -57,6 +60,19 @@ describe('traceFilters', () => {
     const traces = [makeTrace('t1', 'agent.run'), makeTrace('t2', 'tool.call')];
     expect(filterTracesByEventType(traces, 'all').map((t) => t.trace_id)).toEqual(['t1', 't2']);
     expect(filterTracesByEventType(traces, 'agent.run').map((t) => t.trace_id)).toEqual(['t1']);
+  });
+
+  it('computes single-span ratio using span_count', () => {
+    const traces = [
+      makeTrace('t1', 'agent.run'),
+      { ...makeTrace('t2', 'agent.run'), span_count: 2 },
+      { ...makeTrace('t3', 'tool.call'), span_count: 3 },
+    ];
+
+    const coverage = buildEventTypeCoverage(traces);
+    expect(coverage.totalTraces).toBe(3);
+    expect(coverage.singleSpanTraceCount).toBe(1);
+    expect(coverage.singleSpanRatio).toBeCloseTo(1 / 3);
   });
 
   it('keeps ancestor visibility for text search and supports span event-type filter', () => {
