@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS metric_payloads (
   payload TEXT NOT NULL,
   parse_status TEXT NOT NULL,
   parse_error TEXT,
-  item_count INTEGER
+  item_count INTEGER,
+  service_name TEXT,
+  session_key TEXT,
+  metric_names TEXT
 );
 
 CREATE TABLE IF NOT EXISTS log_payloads (
@@ -54,7 +57,11 @@ CREATE TABLE IF NOT EXISTS log_payloads (
   payload TEXT NOT NULL,
   parse_status TEXT NOT NULL,
   parse_error TEXT,
-  item_count INTEGER
+  item_count INTEGER,
+  service_name TEXT,
+  session_key TEXT,
+  severity_text TEXT,
+  severity_number INTEGER
 );
 `);
 
@@ -91,6 +98,25 @@ CREATE TABLE IF NOT EXISTS log_payloads (
   ensureColumn('state', 'TEXT');
   ensureColumn('outcome', 'TEXT');
 
+  const ensureTableColumn = (tableName: string, columnName: string, type: string) => {
+    const tableColumns = db
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all() as Array<{ name: string }>;
+    const tableColumnSet = new Set(tableColumns.map((col) => col.name));
+    if (!tableColumnSet.has(columnName)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${type}`);
+    }
+  };
+
+  ensureTableColumn('metric_payloads', 'service_name', 'TEXT');
+  ensureTableColumn('metric_payloads', 'session_key', 'TEXT');
+  ensureTableColumn('metric_payloads', 'metric_names', 'TEXT');
+
+  ensureTableColumn('log_payloads', 'service_name', 'TEXT');
+  ensureTableColumn('log_payloads', 'session_key', 'TEXT');
+  ensureTableColumn('log_payloads', 'severity_text', 'TEXT');
+  ensureTableColumn('log_payloads', 'severity_number', 'INTEGER');
+
   db.exec(`
 CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
@@ -124,8 +150,14 @@ CREATE INDEX IF NOT EXISTS idx_spans_name_start_time ON spans(
 
 CREATE INDEX IF NOT EXISTS idx_metric_payloads_received_at ON metric_payloads(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_metric_payloads_parse_status ON metric_payloads(parse_status);
+CREATE INDEX IF NOT EXISTS idx_metric_payloads_service_name ON metric_payloads(service_name);
+CREATE INDEX IF NOT EXISTS idx_metric_payloads_session_key ON metric_payloads(session_key);
 CREATE INDEX IF NOT EXISTS idx_log_payloads_received_at ON log_payloads(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_log_payloads_parse_status ON log_payloads(parse_status);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_service_name ON log_payloads(service_name);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_session_key ON log_payloads(session_key);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_severity_number ON log_payloads(severity_number);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_severity_text ON log_payloads(severity_text);
 `);
 }
 

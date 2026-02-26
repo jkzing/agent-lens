@@ -162,6 +162,12 @@ test('POST /v1/metrics and /v1/logs success + summary endpoints', async () => {
     const metricsPayload = {
       resourceMetrics: [
         {
+          resource: {
+            attributes: [
+              { key: 'service.name', value: { stringValue: 'svc-metrics' } },
+              { key: 'openclaw.sessionKey', value: { stringValue: 'sess-m1' } }
+            ]
+          },
           scopeMetrics: [
             {
               metrics: [
@@ -181,9 +187,20 @@ test('POST /v1/metrics and /v1/logs success + summary endpoints', async () => {
     const logsPayload = {
       resourceLogs: [
         {
+          resource: {
+            attributes: [{ key: 'service.name', value: { stringValue: 'svc-logs' } }]
+          },
           scopeLogs: [
             {
-              logRecords: [{ body: { stringValue: 'one' } }, { body: { stringValue: 'two' } }]
+              logRecords: [
+                { body: { stringValue: 'one' }, severityText: 'WARN', severityNumber: 13 },
+                {
+                  body: { stringValue: 'two' },
+                  severityText: 'ERROR',
+                  severityNumber: 17,
+                  attributes: [{ key: 'openclaw.sessionKey', value: { stringValue: 'sess-l1' } }]
+                }
+              ]
             }
           ]
         }
@@ -223,6 +240,25 @@ test('POST /v1/metrics and /v1/logs success + summary endpoints', async () => {
     assert.equal(logsSummary.total_records, 1);
     assert.equal(logsSummary.parse_error_count, 0);
     assert.equal(logsSummary.recent_records[0].item_count, 2);
+
+    const metricRecordsRes = await runtime.app.request(
+      'http://localhost/api/metrics/records?service=svc-metrics&sessionKey=sess-m1&metricName=http.server&parseStatus=ok&limit=10&offset=0'
+    );
+    assert.equal(metricRecordsRes.status, 200);
+    const metricRecords = await metricRecordsRes.json();
+    assert.equal(metricRecords.ok, true);
+    assert.equal(metricRecords.pagination.total, 1);
+    assert.match(metricRecords.items[0].metric_names, /http.server.duration/);
+
+    const logRecordsRes = await runtime.app.request(
+      'http://localhost/api/logs/records?service=svc-logs&sessionKey=sess-l1&severity=ERROR&parseStatus=ok&limit=10&offset=0'
+    );
+    assert.equal(logRecordsRes.status, 200);
+    const logRecords = await logRecordsRes.json();
+    assert.equal(logRecords.ok, true);
+    assert.equal(logRecords.pagination.total, 1);
+    assert.equal(logRecords.items[0].severity_text, 'ERROR');
+    assert.equal(logRecords.items[0].severity_number, 17);
   } finally {
     runtime.cleanup();
   }

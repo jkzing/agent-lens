@@ -11,6 +11,8 @@ import {
   decodeOtlpProtobufLogsRequest,
   decodeOtlpProtobufMetricsRequest,
   decodeOtlpProtobufTraceRequest,
+  extractLogsPayloadSummary,
+  extractMetricsPayloadSummary,
   extractSpans
 } from '../src/otlp.js';
 import { ingestTraceRequest } from '../src/services/ingest.js';
@@ -66,8 +68,11 @@ function createInsertMetricPayload(db: ReturnType<typeof createDbClient>) {
       payload,
       parse_status,
       parse_error,
-      item_count
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      item_count,
+      service_name,
+      session_key,
+      metric_names
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 }
 
@@ -79,8 +84,12 @@ function createInsertLogPayload(db: ReturnType<typeof createDbClient>) {
       payload,
       parse_status,
       parse_error,
-      item_count
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      item_count,
+      service_name,
+      session_key,
+      severity_text,
+      severity_number
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 }
 
@@ -271,4 +280,58 @@ test('exportTrace builds csv baseline content', () => {
   } finally {
     runtime.cleanup();
   }
+});
+
+test('extractMetricsPayloadSummary and extractLogsPayloadSummary derive query fields', () => {
+  const metricsSummary = extractMetricsPayloadSummary({
+    resourceMetrics: [
+      {
+        resource: {
+          attributes: [
+            { key: 'service.name', value: { stringValue: 'svc-a' } },
+            { key: 'openclaw.sessionKey', value: { stringValue: 'sess-a' } }
+          ]
+        },
+        scopeMetrics: [
+          {
+            metrics: [
+              { name: 'http.server.duration', gauge: { dataPoints: [{ asDouble: 1.2 }] } },
+              { name: 'rpc.client.duration', sum: { dataPoints: [{ asInt: 2 }] } }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(metricsSummary.serviceName, 'svc-a');
+  assert.equal(metricsSummary.sessionKey, 'sess-a');
+  assert.deepEqual(metricsSummary.metricNames, ['http.server.duration', 'rpc.client.duration']);
+
+  const logsSummary = extractLogsPayloadSummary({
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [{ key: 'service.name', value: { stringValue: 'svc-b' } }]
+        },
+        scopeLogs: [
+          {
+            logRecords: [
+              { severityText: 'WARN', severityNumber: 13 },
+              {
+                severityText: 'ERROR',
+                severityNumber: 17,
+                attributes: [{ key: 'openclaw.sessionKey', value: { stringValue: 'sess-b' } }]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  });
+
+  assert.equal(logsSummary.serviceName, 'svc-b');
+  assert.equal(logsSummary.sessionKey, 'sess-b');
+  assert.equal(logsSummary.severityText, 'ERROR');
+  assert.equal(logsSummary.severityNumber, 17);
 });

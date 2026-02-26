@@ -57,8 +57,11 @@ export function createApp(dbPath: string): AppRuntime {
       payload,
       parse_status,
       parse_error,
-      item_count
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      item_count,
+      service_name,
+      session_key,
+      metric_names
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertLogPayload = db.prepare(`
@@ -68,8 +71,12 @@ export function createApp(dbPath: string): AppRuntime {
       payload,
       parse_status,
       parse_error,
-      item_count
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      item_count,
+      service_name,
+      session_key,
+      severity_text,
+      severity_number
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const maxBackfillRows = Number(process.env.AGENT_LENS_DERIVED_BACKFILL_LIMIT || '1000');

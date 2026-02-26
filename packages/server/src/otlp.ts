@@ -194,3 +194,133 @@ export function countLogRecords(body: any): number {
   }
   return count;
 }
+
+type SignalSummaryBase = {
+  serviceName: string | null;
+  sessionKey: string | null;
+};
+
+export type MetricsPayloadSummary = SignalSummaryBase & {
+  metricNames: string[];
+};
+
+export type LogsPayloadSummary = SignalSummaryBase & {
+  severityText: string | null;
+  severityNumber: number | null;
+};
+
+function pickServiceName(resourceAttributes: Record<string, unknown>): string | null {
+  const value = resourceAttributes['service.name'];
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function pickSessionKey(attributes: Record<string, unknown>, resourceAttributes: Record<string, unknown>): string | null {
+  const session =
+    typeof attributes['openclaw.sessionKey'] === 'string'
+      ? attributes['openclaw.sessionKey']
+      : typeof attributes['openclaw.sessionId'] === 'string'
+        ? attributes['openclaw.sessionId']
+        : typeof resourceAttributes['openclaw.sessionKey'] === 'string'
+          ? resourceAttributes['openclaw.sessionKey']
+          : typeof resourceAttributes['openclaw.sessionId'] === 'string'
+            ? resourceAttributes['openclaw.sessionId']
+            : null;
+
+  if (!session) return null;
+  const normalized = session.trim();
+  return normalized || null;
+}
+
+export function extractMetricsPayloadSummary(body: any): MetricsPayloadSummary {
+  const resourceMetrics = Array.isArray(body?.resourceMetrics) ? body.resourceMetrics : [];
+
+  let serviceName: string | null = null;
+  let sessionKey: string | null = null;
+  const metricNames = new Set<string>();
+
+  for (const rm of resourceMetrics) {
+    const resourceAttributes = parseAttributeList(rm?.resource?.attributes);
+    serviceName ||= pickServiceName(resourceAttributes);
+    sessionKey ||= pickSessionKey({}, resourceAttributes);
+
+    const scopeMetrics = Array.isArray(rm?.scopeMetrics) ? rm.scopeMetrics : [];
+    for (const sm of scopeMetrics) {
+      const metrics = Array.isArray(sm?.metrics) ? sm.metrics : [];
+      for (const metric of metrics) {
+        if (typeof metric?.name === 'string' && metric.name.trim()) {
+          metricNames.add(metric.name.trim());
+        }
+
+        const candidates = [
+          metric?.gauge?.dataPoints,
+          metric?.sum?.dataPoints,
+          metric?.histogram?.dataPoints,
+          metric?.exponentialHistogram?.dataPoints,
+          metric?.summary?.dataPoints
+        ];
+
+        for (const points of candidates) {
+          if (!Array.isArray(points)) continue;
+          for (const point of points) {
+            if (sessionKey) break;
+            const attrs = parseAttributeList(point?.attributes);
+            sessionKey ||= pickSessionKey(attrs, resourceAttributes);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    serviceName,
+    sessionKey,
+    metricNames: Array.from(metricNames)
+  };
+}
+
+export function extractLogsPayloadSummary(body: any): LogsPayloadSummary {
+  const resourceLogs = Array.isArray(body?.resourceLogs) ? body.resourceLogs : [];
+
+  let serviceName: string | null = null;
+  let sessionKey: string | null = null;
+  let severityNumber: number | null = null;
+  let severityText: string | null = null;
+
+  for (const rl of resourceLogs) {
+    const resourceAttributes = parseAttributeList(rl?.resource?.attributes);
+    serviceName ||= pickServiceName(resourceAttributes);
+    sessionKey ||= pickSessionKey({}, resourceAttributes);
+
+    const scopeLogs = Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : [];
+    for (const sl of scopeLogs) {
+      const logRecords = Array.isArray(sl?.logRecords) ? sl.logRecords : [];
+      for (const record of logRecords) {
+        const attrs = parseAttributeList(record?.attributes);
+        sessionKey ||= pickSessionKey(attrs, resourceAttributes);
+
+        const candidateSeverityNumber =
+          typeof record?.severityNumber === 'number' ? record.severityNumber : null;
+        const candidateSeverityText =
+          typeof record?.severityText === 'string' && record.severityText.trim()
+            ? record.severityText.trim()
+            : null;
+
+        if (candidateSeverityNumber != null && (severityNumber == null || candidateSeverityNumber > severityNumber)) {
+          severityNumber = candidateSeverityNumber;
+          severityText = candidateSeverityText;
+        } else if (severityText == null && candidateSeverityText) {
+          severityText = candidateSeverityText;
+        }
+      }
+    }
+  }
+
+  return {
+    serviceName,
+    sessionKey,
+    severityText,
+    severityNumber
+  };
+}
