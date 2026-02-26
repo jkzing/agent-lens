@@ -8,6 +8,7 @@ describe('SessionTimelinePanel', () => {
   it('renders and allows selecting session + open trace', () => {
     const selected: string[] = [];
     const opened: string[] = [];
+    const openedSignals: Array<{ sessionKey?: string | null; service?: string | null }> = [];
 
     render(
       <SessionTimelinePanel
@@ -50,14 +51,17 @@ describe('SessionTimelinePanel', () => {
         timelineLoading={false}
         timelineError={null}
         onOpenTrace={(traceId) => opened.push(traceId)}
+        onOpenSignals={(value) => openedSignals.push(value)}
       />
     );
 
     fireEvent.click(screen.getByRole('button', { name: /sess-1/i }));
     fireEvent.click(screen.getByRole('button', { name: /open trace/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open signals/i }));
 
     expect(selected).toEqual(['sess-1']);
     expect(opened).toEqual(['trace-1']);
+    expect(openedSignals).toEqual([{ service: 'nyx', sessionKey: null }]);
     expect(screen.getByTestId('timeline-event-detail')).toBeTruthy();
     expect(screen.getByText('Event Detail')).toBeTruthy();
     expect(screen.getByTestId('timeline-event-detail').textContent).toContain('"foo": "bar"');

@@ -17,6 +17,7 @@ type SessionTimelinePanelProps = {
   timelineLoading: boolean;
   timelineError: string | null;
   onOpenTrace?: (traceId: string) => void;
+  onOpenSignals?: (options: { sessionKey?: string | null; service?: string | null }) => void;
 };
 
 export function SessionTimelinePanel({
@@ -33,7 +34,8 @@ export function SessionTimelinePanel({
   timelineItems,
   timelineLoading,
   timelineError,
-  onOpenTrace
+  onOpenTrace,
+  onOpenSignals
 }: SessionTimelinePanelProps) {
   const [selectedEventIndex, setSelectedEventIndex] = useState<number>(0);
 
@@ -131,6 +133,11 @@ export function SessionTimelinePanel({
                     isSelected={selectedEventIndex === index}
                     onSelect={() => setSelectedEventIndex(index)}
                     onOpenTrace={onOpenTrace}
+                    onOpenSignals={
+                      onOpenSignals
+                        ? (options) => onOpenSignals({ ...options, sessionKey: selectedSessionKey })
+                        : undefined
+                    }
                   />
                 ))}
               </ul>
@@ -149,9 +156,10 @@ type TimelineEventRowProps = {
   isSelected: boolean;
   onSelect: () => void;
   onOpenTrace?: (traceId: string) => void;
+  onOpenSignals?: (options: { sessionKey?: string | null; service?: string | null }) => void;
 };
 
-const TimelineEventRow = memo(function TimelineEventRow({ item, isSelected, onSelect, onOpenTrace }: TimelineEventRowProps) {
+const TimelineEventRow = memo(function TimelineEventRow({ item, isSelected, onSelect, onOpenTrace, onOpenSignals }: TimelineEventRowProps) {
   const traceAvailable = Boolean(item.trace_id && onOpenTrace);
   return (
     <li>
@@ -197,6 +205,18 @@ const TimelineEventRow = memo(function TimelineEventRow({ item, isSelected, onSe
           ) : (
             <span className="text-muted-foreground">Trace unavailable</span>
           )}
+          {onOpenSignals ? (
+            <button
+              type="button"
+              className="text-primary underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenSignals({ service: item.service_name });
+              }}
+            >
+              Open Signals
+            </button>
+          ) : null}
         </div>
       </div>
     </li>

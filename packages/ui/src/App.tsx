@@ -8,13 +8,15 @@ import { OverviewPanel } from '@/features/overview/OverviewPanel';
 import { formatDurationNs } from '@/features/overview/utils';
 import { pickSelectedOverviewStep, useOverviewData } from '@/features/overview/useOverviewData';
 import { SessionTimelinePanel } from '@/features/sessions/SessionTimelinePanel';
+import { SignalsPanel } from '@/features/signals/SignalsPanel';
 import { resolveTraceBridge } from '@/features/sessions/traceBridge';
 import { detectSpanType, parseJsonObject, toNumber, useDebugViewState } from '@/hooks/useDebugViewState';
 import { useSessionTimelineData } from '@/hooks/useSessionTimelineData';
 import { useTraceData } from '@/hooks/useTraceData';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'debug' | 'session-timeline'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'debug' | 'session-timeline' | 'signals'>('overview');
+  const [signalsPrefill, setSignalsPrefill] = useState<{ service?: string; sessionKey?: string } | null>(null);
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
@@ -168,11 +170,12 @@ export default function App() {
 
           {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'overview' | 'debug' | 'session-timeline')} className="space-y-4">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'overview' | 'debug' | 'session-timeline' | 'signals')} className="space-y-4">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="debug">Debug</TabsTrigger>
               <TabsTrigger value="session-timeline">Session Timeline</TabsTrigger>
+              <TabsTrigger value="signals">Signals</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-0">
@@ -270,7 +273,18 @@ export default function App() {
                   setError(null);
                   setSelectedTraceId(resolution.traceId);
                 }}
+                onOpenSignals={(options) => {
+                  setSignalsPrefill({
+                    service: options.service || undefined,
+                    sessionKey: options.sessionKey || undefined
+                  });
+                  setActiveTab('signals');
+                }}
               />
+            </TabsContent>
+
+            <TabsContent value="signals" className="mt-0">
+              <SignalsPanel initialFilters={signalsPrefill ?? undefined} />
             </TabsContent>
           </Tabs>
         </div>
