@@ -3,6 +3,7 @@ import type { RouteDeps } from './types.js';
 import { registerHealthRoutes } from './health.js';
 import { registerOtlpRoutes } from './otlp.js';
 import { registerSpansRoutes } from './spans.js';
+import { registerSessionsRoutes } from './sessions.js';
 import { registerTracesRoutes } from './traces.js';
 
 export function registerRoutes(app: Hono, deps: RouteDeps) {
@@ -10,4 +11,5 @@ export function registerRoutes(app: Hono, deps: RouteDeps) {
   registerOtlpRoutes(app, deps);
   registerSpansRoutes(app, deps);
   registerTracesRoutes(app, deps);
+  registerSessionsRoutes(app, deps);
 }
