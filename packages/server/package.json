@@ -11,7 +11,8 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "bench:sessions": "tsx scripts/benchmark-sessions.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.4",
