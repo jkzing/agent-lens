@@ -5,6 +5,10 @@ const otlpRoot = require('@opentelemetry/otlp-transformer/build/src/generated/ro
 
 const exportTraceServiceRequestType =
   otlpRoot.opentelemetry.proto.collector.trace.v1.ExportTraceServiceRequest;
+const exportMetricsServiceRequestType =
+  otlpRoot.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
+const exportLogsServiceRequestType =
+  otlpRoot.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 
 export type ParsedSpan = {
   traceId: string;
@@ -138,4 +142,55 @@ export function extractSpans(body: any): ParsedSpan[] {
 
 export function decodeOtlpProtobufTraceRequest(raw: Buffer): any {
   return exportTraceServiceRequestType.decode(raw);
+}
+
+export function decodeOtlpProtobufMetricsRequest(raw: Buffer): any {
+  return exportMetricsServiceRequestType.decode(raw);
+}
+
+export function decodeOtlpProtobufLogsRequest(raw: Buffer): any {
+  return exportLogsServiceRequestType.decode(raw);
+}
+
+export function countMetricDataPoints(body: any): number {
+  let count = 0;
+  const resourceMetrics = Array.isArray(body?.resourceMetrics) ? body.resourceMetrics : [];
+  for (const rm of resourceMetrics) {
+    const scopeMetrics = Array.isArray(rm?.scopeMetrics) ? rm.scopeMetrics : [];
+    for (const sm of scopeMetrics) {
+      const metrics = Array.isArray(sm?.metrics) ? sm.metrics : [];
+      for (const metric of metrics) {
+        const candidates = [
+          metric?.gauge?.dataPoints,
+          metric?.sum?.dataPoints,
+          metric?.histogram?.dataPoints,
+          metric?.exponentialHistogram?.dataPoints,
+          metric?.summary?.dataPoints
+        ];
+        let matched = false;
+        for (const points of candidates) {
+          if (Array.isArray(points)) {
+            count += points.length;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+export function countLogRecords(body: any): number {
+  let count = 0;
+  const resourceLogs = Array.isArray(body?.resourceLogs) ? body.resourceLogs : [];
+  for (const rl of resourceLogs) {
+    const scopeLogs = Array.isArray(rl?.scopeLogs) ? rl.scopeLogs : [];
+    for (const sl of scopeLogs) {
+      const logRecords = Array.isArray(sl?.logRecords) ? sl.logRecords : [];
+      count += logRecords.length;
+    }
+  }
+  return count;
 }

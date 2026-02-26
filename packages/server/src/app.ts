@@ -2,7 +2,14 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { createDbClient } from './db/client.js';
 import { backfillDerivedSpanColumns, bootstrapSchema } from './db/schema.js';
-import { decodeOtlpProtobufTraceRequest, extractSpans } from './otlp.js';
+import {
+  countLogRecords,
+  countMetricDataPoints,
+  decodeOtlpProtobufLogsRequest,
+  decodeOtlpProtobufMetricsRequest,
+  decodeOtlpProtobufTraceRequest,
+  extractSpans
+} from './otlp.js';
 import { registerRoutes } from './routes/index.js';
 
 export type AppRuntime = {
@@ -43,6 +50,28 @@ export function createApp(dbPath: string): AppRuntime {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
+  const insertMetricPayload = db.prepare(`
+    INSERT INTO metric_payloads (
+      received_at,
+      content_type,
+      payload,
+      parse_status,
+      parse_error,
+      item_count
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertLogPayload = db.prepare(`
+    INSERT INTO log_payloads (
+      received_at,
+      content_type,
+      payload,
+      parse_status,
+      parse_error,
+      item_count
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
   const maxBackfillRows = Number(process.env.AGENT_LENS_DERIVED_BACKFILL_LIMIT || '1000');
   if (Number.isFinite(maxBackfillRows) && maxBackfillRows > 0) {
     backfillDerivedSpanColumns(db, Math.floor(maxBackfillRows));
@@ -51,8 +80,14 @@ export function createApp(dbPath: string): AppRuntime {
   registerRoutes(app, {
     db,
     insertSpan,
+    insertMetricPayload,
+    insertLogPayload,
     decodeOtlpProtobufTraceRequest,
-    extractSpans
+    decodeOtlpProtobufMetricsRequest,
+    decodeOtlpProtobufLogsRequest,
+    extractSpans,
+    countMetricDataPoints,
+    countLogRecords
   });
 
   return { app, db };

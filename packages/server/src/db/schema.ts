@@ -36,6 +36,62 @@ CREATE TABLE IF NOT EXISTS spans (
   outcome TEXT,
   payload TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS metric_payloads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  parse_status TEXT NOT NULL,
+  parse_error TEXT,
+  item_count INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS log_payloads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  received_at TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  parse_status TEXT NOT NULL,
+  parse_error TEXT,
+  item_count INTEGER
+);
+`);
+
+  const existingColumns = db
+    .prepare('PRAGMA table_info(spans)')
+    .all() as Array<{ name: string }>;
+  const columnSet = new Set(existingColumns.map((col) => col.name));
+
+  const ensureColumn = (name: string, type: string) => {
+    if (!columnSet.has(name)) {
+      db.exec(`ALTER TABLE spans ADD COLUMN ${name} ${type}`);
+      columnSet.add(name);
+    }
+  };
+
+  ensureColumn('trace_id', 'TEXT');
+  ensureColumn('span_id', 'TEXT');
+  ensureColumn('parent_span_id', 'TEXT');
+  ensureColumn('name', 'TEXT');
+  ensureColumn('kind', 'INTEGER');
+  ensureColumn('start_time_unix_nano', 'TEXT');
+  ensureColumn('end_time_unix_nano', 'TEXT');
+  ensureColumn('duration_ns', 'INTEGER');
+  ensureColumn('attributes', 'TEXT');
+  ensureColumn('status_code', 'INTEGER');
+  ensureColumn('status', 'TEXT');
+  ensureColumn('resource_attributes', 'TEXT');
+  ensureColumn('events', 'TEXT');
+
+  ensureColumn('event_type', 'TEXT');
+  ensureColumn('session_key', 'TEXT');
+  ensureColumn('session_id', 'TEXT');
+  ensureColumn('channel', 'TEXT');
+  ensureColumn('state', 'TEXT');
+  ensureColumn('outcome', 'TEXT');
+
+  db.exec(`
 CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_session_key_start ON spans(session_key, CAST(start_time_unix_nano AS INTEGER), id);
@@ -65,39 +121,12 @@ CREATE INDEX IF NOT EXISTS idx_spans_name_start_time ON spans(
   name,
   CAST(start_time_unix_nano AS INTEGER)
 );
+
+CREATE INDEX IF NOT EXISTS idx_metric_payloads_received_at ON metric_payloads(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_metric_payloads_parse_status ON metric_payloads(parse_status);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_received_at ON log_payloads(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_log_payloads_parse_status ON log_payloads(parse_status);
 `);
-
-  const existingColumns = db
-    .prepare('PRAGMA table_info(spans)')
-    .all() as Array<{ name: string }>;
-  const columnSet = new Set(existingColumns.map((col) => col.name));
-
-  const ensureColumn = (name: string, type: string) => {
-    if (!columnSet.has(name)) {
-      db.exec(`ALTER TABLE spans ADD COLUMN ${name} ${type}`);
-    }
-  };
-
-  ensureColumn('trace_id', 'TEXT');
-  ensureColumn('span_id', 'TEXT');
-  ensureColumn('parent_span_id', 'TEXT');
-  ensureColumn('name', 'TEXT');
-  ensureColumn('kind', 'INTEGER');
-  ensureColumn('start_time_unix_nano', 'TEXT');
-  ensureColumn('end_time_unix_nano', 'TEXT');
-  ensureColumn('duration_ns', 'INTEGER');
-  ensureColumn('attributes', 'TEXT');
-  ensureColumn('status_code', 'INTEGER');
-  ensureColumn('status', 'TEXT');
-  ensureColumn('resource_attributes', 'TEXT');
-  ensureColumn('events', 'TEXT');
-
-  ensureColumn('event_type', 'TEXT');
-  ensureColumn('session_key', 'TEXT');
-  ensureColumn('session_id', 'TEXT');
-  ensureColumn('channel', 'TEXT');
-  ensureColumn('state', 'TEXT');
-  ensureColumn('outcome', 'TEXT');
 }
 
 export function backfillDerivedSpanColumns(db: DatabaseSync, limit = 1000): number {
