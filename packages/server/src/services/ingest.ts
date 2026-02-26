@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { extractSessionFields } from '../lib/session-extract.js';
-import type { ParsedSpan } from '../otlp.js';
+import { extractLogsPayloadSummary, extractMetricsPayloadSummary, type ParsedSpan } from '../otlp.js';
 
 export type IngestDeps = {
   db: DatabaseSync;
@@ -170,6 +170,46 @@ export async function ingestSignalRequest(
   const countItems = isMetrics ? deps.countMetricDataPoints : deps.countLogRecords;
   const insertPayload = isMetrics ? deps.insertMetricPayload : deps.insertLogPayload;
 
+  const insertErrorPayload = (receivedAtValue: string, type: string, rawPayload: string, error: string) => {
+    if (isMetrics) {
+      insertPayload.run(receivedAtValue, type, rawPayload, 'error', error, null, null, null, null);
+      return;
+    }
+    insertPayload.run(receivedAtValue, type, rawPayload, 'error', error, null, null, null, null, null);
+  };
+
+  const insertOkPayload = (receivedAtValue: string, type: string, rawPayload: string, itemCount: number, bodyValue: any) => {
+    if (isMetrics) {
+      const summary = extractMetricsPayloadSummary(bodyValue);
+      insertPayload.run(
+        receivedAtValue,
+        type,
+        rawPayload,
+        'ok',
+        null,
+        itemCount,
+        summary.serviceName,
+        summary.sessionKey,
+        summary.metricNames.length > 0 ? JSON.stringify(summary.metricNames) : null
+      );
+      return;
+    }
+
+    const summary = extractLogsPayloadSummary(bodyValue);
+    insertPayload.run(
+      receivedAtValue,
+      type,
+      rawPayload,
+      'ok',
+      null,
+      itemCount,
+      summary.serviceName,
+      summary.sessionKey,
+      summary.severityText,
+      summary.severityNumber
+    );
+  };
+
   let body: any = null;
   let payload: string;
 
@@ -191,19 +231,19 @@ export async function ingestSignalRequest(
   } else {
     body = await readJson().catch(() => null);
     if (!body) {
-      insertPayload.run(receivedAt, contentType || 'application/json', '{}', 'error', 'Invalid JSON payload', null);
+      insertErrorPayload(receivedAt, contentType || 'application/json', '{}', 'Invalid JSON payload');
       return { rejectedItems: 1, errorMessage: 'Invalid JSON payload' };
     }
     payload = JSON.stringify(body);
   }
 
   if (!body) {
-    insertPayload.run(receivedAt, contentType || 'application/x-protobuf', payload!, 'error', 'Invalid protobuf payload', null);
+    insertErrorPayload(receivedAt, contentType || 'application/x-protobuf', payload!, 'Invalid protobuf payload');
     return { rejectedItems: 1, errorMessage: 'Invalid protobuf payload' };
   }
 
   const itemCount = countItems(body);
-  insertPayload.run(receivedAt, contentType || 'application/json', payload!, 'ok', null, itemCount);
+  insertOkPayload(receivedAt, contentType || 'application/json', payload!, itemCount, body);
   return { rejectedItems: 0, errorMessage: '' };
 }
 
