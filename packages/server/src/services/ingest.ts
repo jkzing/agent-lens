@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { extractSessionFields } from '../lib/session-extract.js';
 import type { ParsedSpan } from '../otlp.js';
 
 export type IngestDeps = {
@@ -42,7 +43,29 @@ export async function ingestTraceRequest(
     })();
 
     if (!body) {
-      insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, null, payload);
+      insertSpan.run(
+        receivedAt,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        payload
+      );
       return { rejectedSpans: 1, errorMessage: 'Invalid protobuf payload' };
     }
   } else {
@@ -57,13 +80,37 @@ export async function ingestTraceRequest(
   const parsedSpans = extractSpans(body);
 
   if (parsedSpans.length === 0) {
-    insertSpan.run(receivedAt, null, null, null, null, null, null, null, null, null, null, null, null, null, payload);
+    insertSpan.run(
+      receivedAt,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      payload
+    );
     return { rejectedSpans: 0, errorMessage: 'No valid spans found in payload' };
   }
 
   try {
     db.exec('BEGIN');
     for (const row of parsedSpans) {
+      const derived = extractSessionFields(row.attributes, row.resourceAttributes);
+
       insertSpan.run(
         receivedAt,
         row.traceId || null,
@@ -79,6 +126,12 @@ export async function ingestTraceRequest(
         row.status,
         row.resourceAttributes,
         row.events,
+        row.name?.trim() || null,
+        derived.sessionKey,
+        derived.sessionId,
+        derived.channel,
+        derived.state,
+        derived.outcome,
         payload
       );
     }
