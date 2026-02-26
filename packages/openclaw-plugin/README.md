@@ -9,25 +9,31 @@ Provide a small, testable plugin entry point that can be embedded by OpenClaw ru
 Current scaffold includes:
 
 - plugin factory: `createOpenClawPlugin`
-- hook stubs:
+- hook handlers:
   - `before_tool_call`
   - `tool_result_persist`
 - config parsing/types:
   - `enabled`
   - `sampleRate`
   - `includeTools`
+  - optional `emitSpan(event)` callback for MVP telemetry emission
 
-## Boundaries (MVP)
+## MVP behavior implemented
 
-This package currently does **not** implement:
+The plugin now emits real tool lifecycle spans/events from both hook points.
 
-- transport/client wiring to any backend
-- persistent storage
-- full telemetry event schema
-- retry/backoff, buffering, or batching
-- OpenClaw runtime integration code
+- default event name: `openclaw.tool.call`
+- emitted at:
+  - `before_tool_call`
+  - `tool_result_persist`
+- minimum attributes included:
+  - `toolName`
+  - `sessionKey` (when provided)
+  - `status` (`success` / `error`)
+  - `durationMs` (from explicit payload or in-memory start/end timing)
+  - `error` (only on error, concise)
 
-It is intentionally scaffold-only to keep blast radius low.
+If `emitSpan` is not provided, hooks remain no-op for telemetry and stay backward-compatible.
 
 ## Quick start
 
@@ -37,17 +43,35 @@ import { createOpenClawPlugin } from '@agent-lens/openclaw-plugin';
 const plugin = createOpenClawPlugin({
   enabled: true,
   sampleRate: 1,
-  includeTools: ['web_search']
+  includeTools: ['web_search'],
+  emitSpan: (event) => {
+    console.log(event.name, event.attributes);
+  }
 });
 
-plugin.before_tool_call({ toolName: 'web_search', args: { query: 'agent lens' } });
-plugin.tool_result_persist({ toolName: 'web_search', success: true, result: { ok: true } });
+plugin.before_tool_call({
+  toolName: 'web_search',
+  sessionKey: 'sess-1',
+  callKey: 'call-1',
+  args: { query: 'agent lens' }
+});
+
+plugin.tool_result_persist({
+  toolName: 'web_search',
+  sessionKey: 'sess-1',
+  callKey: 'call-1',
+  success: true,
+  result: { ok: true }
+});
 ```
 
-## TODO roadmap
+## Boundaries (current)
 
-1. Define stable hook payload schemas aligned with OpenClaw lifecycle.
-2. Add telemetry event mapper (tool call/result -> agent-lens record shape).
-3. Add optional OTLP/HTTP writer and backpressure strategy.
-4. Add richer validation + warning surfaces.
-5. Add contract tests against real OpenClaw hook fixtures.
+This package still does **not** implement:
+
+- transport/client wiring to backend collectors
+- persistent storage
+- retry/backoff, buffering, or batching
+- OpenClaw runtime integration code
+
+It intentionally keeps emission logic minimal and embeddable.

@@ -1,7 +1,10 @@
+import type { TelemetryEmitter } from './telemetry.js';
+
 export interface OpenClawPluginConfig {
   enabled: boolean;
   sampleRate: number;
   includeTools: string[];
+  emitSpan?: TelemetryEmitter;
 }
 
 export const defaultOpenClawPluginConfig: OpenClawPluginConfig = {
@@ -36,9 +39,14 @@ export function parseOpenClawPluginConfig(
     ? candidate.includeTools.filter((tool): tool is string => typeof tool === 'string')
     : defaultOpenClawPluginConfig.includeTools;
 
+  const emitSpan = typeof candidate.emitSpan === 'function'
+    ? candidate.emitSpan
+    : undefined;
+
   return {
     enabled,
     sampleRate,
-    includeTools
+    includeTools,
+    emitSpan
   };
 }
