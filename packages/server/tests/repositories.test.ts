@@ -179,3 +179,58 @@ test('tracesRepo csv export data shape baseline: listTraceSpansForExport', () =>
     runtime.cleanup();
   }
 });
+
+test('schema creates metric/log payload tables and indexes', () => {
+  const runtime = createTestDb();
+  try {
+    const tableRows = runtime.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('metric_payloads', 'log_payloads')")
+      .all() as Array<{ name: string }>;
+    const tableNames = new Set(tableRows.map((row) => row.name));
+    assert.ok(tableNames.has('metric_payloads'));
+    assert.ok(tableNames.has('log_payloads'));
+
+    const metricIndexes = runtime.db.prepare("PRAGMA index_list('metric_payloads')").all() as Array<{ name: string }>;
+    const logIndexes = runtime.db.prepare("PRAGMA index_list('log_payloads')").all() as Array<{ name: string }>;
+    assert.ok(metricIndexes.some((idx) => idx.name === 'idx_metric_payloads_received_at'));
+    assert.ok(metricIndexes.some((idx) => idx.name === 'idx_metric_payloads_parse_status'));
+    assert.ok(logIndexes.some((idx) => idx.name === 'idx_log_payloads_received_at'));
+    assert.ok(logIndexes.some((idx) => idx.name === 'idx_log_payloads_parse_status'));
+  } finally {
+    runtime.cleanup();
+  }
+});
+
+test('bootstrapSchema migration safety for pre-existing spans-only db', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agent-lens-migrate-test-'));
+  const dbFile = join(dir, 'legacy.db');
+  const db = createDbClient(dbFile);
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS spans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        received_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+      );
+    `);
+
+    bootstrapSchema(db);
+
+    const tableRows = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('spans', 'metric_payloads', 'log_payloads')")
+      .all() as Array<{ name: string }>;
+    const names = new Set(tableRows.map((row) => row.name));
+    assert.ok(names.has('spans'));
+    assert.ok(names.has('metric_payloads'));
+    assert.ok(names.has('log_payloads'));
+
+    const spanColumns = db.prepare('PRAGMA table_info(spans)').all() as Array<{ name: string }>;
+    const columnNames = new Set(spanColumns.map((c) => c.name));
+    assert.ok(columnNames.has('trace_id'));
+    assert.ok(columnNames.has('event_type'));
+    assert.ok(columnNames.has('session_key'));
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

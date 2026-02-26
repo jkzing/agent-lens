@@ -5,12 +5,23 @@ import type { ParsedSpan } from '../otlp.js';
 export type IngestDeps = {
   db: DatabaseSync;
   insertSpan: any;
+  insertMetricPayload: any;
+  insertLogPayload: any;
   decodeOtlpProtobufTraceRequest: (raw: Buffer) => any;
+  decodeOtlpProtobufMetricsRequest: (raw: Buffer) => any;
+  decodeOtlpProtobufLogsRequest: (raw: Buffer) => any;
   extractSpans: (body: any) => ParsedSpan[];
+  countMetricDataPoints: (body: any) => number;
+  countLogRecords: (body: any) => number;
 };
 
 export type IngestResult = {
   rejectedSpans: number;
+  errorMessage: string;
+};
+
+export type SignalIngestResult = {
+  rejectedItems: number;
   errorMessage: string;
 };
 
@@ -142,4 +153,99 @@ export async function ingestTraceRequest(
   }
 
   return { rejectedSpans: 0, errorMessage: '' };
+}
+
+type SignalMode = 'metrics' | 'logs';
+
+export async function ingestSignalRequest(
+  signal: SignalMode,
+  contentType: string,
+  readJson: () => Promise<any>,
+  readArrayBuffer: () => Promise<ArrayBuffer>,
+  deps: IngestDeps
+): Promise<SignalIngestResult> {
+  const receivedAt = new Date().toISOString();
+  const isMetrics = signal === 'metrics';
+  const decode = isMetrics ? deps.decodeOtlpProtobufMetricsRequest : deps.decodeOtlpProtobufLogsRequest;
+  const countItems = isMetrics ? deps.countMetricDataPoints : deps.countLogRecords;
+  const insertPayload = isMetrics ? deps.insertMetricPayload : deps.insertLogPayload;
+
+  let body: any = null;
+  let payload: string;
+
+  if (contentType.includes('application/x-protobuf')) {
+    const raw = Buffer.from(await readArrayBuffer());
+    payload = JSON.stringify({
+      contentType: 'application/x-protobuf',
+      encoding: 'base64',
+      body: raw.toString('base64')
+    });
+
+    body = (() => {
+      try {
+        return decode(raw);
+      } catch {
+        return null;
+      }
+    })();
+  } else {
+    body = await readJson().catch(() => null);
+    if (!body) {
+      insertPayload.run(receivedAt, contentType || 'application/json', '{}', 'error', 'Invalid JSON payload', null);
+      return { rejectedItems: 1, errorMessage: 'Invalid JSON payload' };
+    }
+    payload = JSON.stringify(body);
+  }
+
+  if (!body) {
+    insertPayload.run(receivedAt, contentType || 'application/x-protobuf', payload!, 'error', 'Invalid protobuf payload', null);
+    return { rejectedItems: 1, errorMessage: 'Invalid protobuf payload' };
+  }
+
+  const itemCount = countItems(body);
+  insertPayload.run(receivedAt, contentType || 'application/json', payload!, 'ok', null, itemCount);
+  return { rejectedItems: 0, errorMessage: '' };
+}
+
+export function getSignalIngestSummary(db: DatabaseSync, tableName: 'metric_payloads' | 'log_payloads') {
+  const totals = db
+    .prepare(
+      `SELECT
+        COUNT(*) AS total_records,
+        MAX(received_at) AS last_received_at,
+        SUM(CASE WHEN parse_status = 'error' THEN 1 ELSE 0 END) AS parse_error_count
+      FROM ${tableName}`
+    )
+    .get() as {
+    total_records: number;
+    last_received_at: string | null;
+    parse_error_count: number;
+  };
+
+  const recent = db
+    .prepare(
+      `SELECT id, received_at, content_type, parse_status, parse_error, item_count
+       FROM ${tableName}
+       ORDER BY id DESC
+       LIMIT 10`
+    )
+    .all() as Array<{
+    id: number;
+    received_at: string;
+    content_type: string;
+    parse_status: string;
+    parse_error: string | null;
+    item_count: number | null;
+  }>;
+
+  return {
+    total_records: Number(totals.total_records || 0),
+    last_received_at: totals.last_received_at || null,
+    parse_error_count: Number(totals.parse_error_count || 0),
+    recent_records: recent.map((row) => ({
+      ...row,
+      id: Number(row.id),
+      item_count: row.item_count == null ? null : Number(row.item_count)
+    }))
+  };
 }

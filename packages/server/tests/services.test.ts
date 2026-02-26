@@ -5,7 +5,14 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createDbClient } from '../src/db/client.js';
 import { bootstrapSchema } from '../src/db/schema.js';
-import { decodeOtlpProtobufTraceRequest, extractSpans } from '../src/otlp.js';
+import {
+  countLogRecords,
+  countMetricDataPoints,
+  decodeOtlpProtobufLogsRequest,
+  decodeOtlpProtobufMetricsRequest,
+  decodeOtlpProtobufTraceRequest,
+  extractSpans
+} from '../src/otlp.js';
 import { ingestTraceRequest } from '../src/services/ingest.js';
 import { exportTrace, listTraces } from '../src/services/traces.js';
 
@@ -51,10 +58,38 @@ function createInsertSpan(db: ReturnType<typeof createDbClient>) {
   `);
 }
 
+function createInsertMetricPayload(db: ReturnType<typeof createDbClient>) {
+  return db.prepare(`
+    INSERT INTO metric_payloads (
+      received_at,
+      content_type,
+      payload,
+      parse_status,
+      parse_error,
+      item_count
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+}
+
+function createInsertLogPayload(db: ReturnType<typeof createDbClient>) {
+  return db.prepare(`
+    INSERT INTO log_payloads (
+      received_at,
+      content_type,
+      payload,
+      parse_status,
+      parse_error,
+      item_count
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+}
+
 test('ingestTraceRequest handles invalid and valid JSON payload paths', async () => {
   const runtime = createTestDb();
   try {
     const insertSpan = createInsertSpan(runtime.db);
+    const insertMetricPayload = createInsertMetricPayload(runtime.db);
+    const insertLogPayload = createInsertLogPayload(runtime.db);
 
     const invalid = await ingestTraceRequest(
       'application/json',
@@ -62,7 +97,18 @@ test('ingestTraceRequest handles invalid and valid JSON payload paths', async ()
         throw new Error('bad json');
       },
       async () => new ArrayBuffer(0),
-      { db: runtime.db, insertSpan, decodeOtlpProtobufTraceRequest, extractSpans }
+      {
+        db: runtime.db,
+        insertSpan,
+        insertMetricPayload,
+        insertLogPayload,
+        decodeOtlpProtobufTraceRequest,
+        decodeOtlpProtobufMetricsRequest,
+        decodeOtlpProtobufLogsRequest,
+        extractSpans,
+        countMetricDataPoints,
+        countLogRecords
+      }
     );
     assert.deepEqual(invalid, { rejectedSpans: 1, errorMessage: 'Invalid JSON payload' });
 
@@ -93,7 +139,18 @@ test('ingestTraceRequest handles invalid and valid JSON payload paths', async ()
       'application/json',
       async () => validPayload,
       async () => new ArrayBuffer(0),
-      { db: runtime.db, insertSpan, decodeOtlpProtobufTraceRequest, extractSpans }
+      {
+        db: runtime.db,
+        insertSpan,
+        insertMetricPayload,
+        insertLogPayload,
+        decodeOtlpProtobufTraceRequest,
+        decodeOtlpProtobufMetricsRequest,
+        decodeOtlpProtobufLogsRequest,
+        extractSpans,
+        countMetricDataPoints,
+        countLogRecords
+      }
     );
 
     assert.deepEqual(valid, { rejectedSpans: 0, errorMessage: '' });

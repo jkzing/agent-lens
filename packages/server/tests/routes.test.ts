@@ -156,6 +156,121 @@ test('GET /api/traces returns expected structure', async () => {
   }
 });
 
+test('POST /v1/metrics and /v1/logs success + summary endpoints', async () => {
+  const runtime = createTestRuntime();
+  try {
+    const metricsPayload = {
+      resourceMetrics: [
+        {
+          scopeMetrics: [
+            {
+              metrics: [
+                {
+                  name: 'http.server.duration',
+                  gauge: {
+                    dataPoints: [{ asDouble: 12.3 }, { asDouble: 13.1 }]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    const logsPayload = {
+      resourceLogs: [
+        {
+          scopeLogs: [
+            {
+              logRecords: [{ body: { stringValue: 'one' } }, { body: { stringValue: 'two' } }]
+            }
+          ]
+        }
+      ]
+    };
+
+    const metricsRes = await runtime.app.request('http://localhost/v1/metrics', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(metricsPayload)
+    });
+    assert.equal(metricsRes.status, 200);
+    assert.deepEqual(await metricsRes.json(), {});
+
+    const logsRes = await runtime.app.request('http://localhost/v1/logs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(logsPayload)
+    });
+    assert.equal(logsRes.status, 200);
+    assert.deepEqual(await logsRes.json(), {});
+
+    const metricsSummaryRes = await runtime.app.request('http://localhost/api/metrics/ingest-summary');
+    assert.equal(metricsSummaryRes.status, 200);
+    const metricsSummary = await metricsSummaryRes.json();
+    assert.equal(metricsSummary.ok, true);
+    assert.equal(metricsSummary.signal, 'metrics');
+    assert.equal(metricsSummary.total_records, 1);
+    assert.equal(metricsSummary.parse_error_count, 0);
+    assert.equal(metricsSummary.recent_records[0].item_count, 2);
+
+    const logsSummaryRes = await runtime.app.request('http://localhost/api/logs/ingest-summary');
+    assert.equal(logsSummaryRes.status, 200);
+    const logsSummary = await logsSummaryRes.json();
+    assert.equal(logsSummary.ok, true);
+    assert.equal(logsSummary.signal, 'logs');
+    assert.equal(logsSummary.total_records, 1);
+    assert.equal(logsSummary.parse_error_count, 0);
+    assert.equal(logsSummary.recent_records[0].item_count, 2);
+  } finally {
+    runtime.cleanup();
+  }
+});
+
+test('POST /v1/metrics and /v1/logs invalid JSON returns partialSuccess', async () => {
+  const runtime = createTestRuntime();
+  try {
+    const metricsRes = await runtime.app.request('http://localhost/v1/metrics', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{'
+    });
+    assert.equal(metricsRes.status, 200);
+    assert.deepEqual(await metricsRes.json(), {
+      partialSuccess: {
+        rejectedDataPoints: 1,
+        errorMessage: 'Invalid JSON payload'
+      }
+    });
+
+    const logsRes = await runtime.app.request('http://localhost/v1/logs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{'
+    });
+    assert.equal(logsRes.status, 200);
+    assert.deepEqual(await logsRes.json(), {
+      partialSuccess: {
+        rejectedLogRecords: 1,
+        errorMessage: 'Invalid JSON payload'
+      }
+    });
+
+    const metricsSummaryRes = await runtime.app.request('http://localhost/api/metrics/ingest-summary');
+    const metricsSummary = await metricsSummaryRes.json();
+    assert.equal(metricsSummary.total_records, 1);
+    assert.equal(metricsSummary.parse_error_count, 1);
+
+    const logsSummaryRes = await runtime.app.request('http://localhost/api/logs/ingest-summary');
+    const logsSummary = await logsSummaryRes.json();
+    assert.equal(logsSummary.total_records, 1);
+    assert.equal(logsSummary.parse_error_count, 1);
+  } finally {
+    runtime.cleanup();
+  }
+});
+
 test('GET /api/traces/:traceId and /export?format=csv basic contract', async () => {
   const runtime = createTestRuntime();
   try {
