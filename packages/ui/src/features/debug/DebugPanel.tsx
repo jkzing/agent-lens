@@ -34,6 +34,7 @@ type DebugPanelProps = {
   selectedTrace: TraceSummary | null;
   setError: (value: string) => void;
   exportTrace: (traceId: string, format: 'json' | 'csv') => Promise<void>;
+  onOpenSignals?: () => void;
   spanSearch: string;
   setSpanSearch: (value: string) => void;
   spanEventTypeFilter: string;
@@ -81,6 +82,7 @@ export function DebugPanel({
   selectedTrace,
   setError,
   exportTrace,
+  onOpenSignals,
   spanSearch,
   setSpanSearch,
   spanEventTypeFilter,
@@ -148,6 +150,7 @@ export function DebugPanel({
           selectedTrace={selectedTrace}
           setError={setError}
           exportTrace={exportTrace}
+          onOpenSignals={onOpenSignals}
           spanSearch={spanSearch}
           setSpanSearch={setSpanSearch}
           spanEventTypeFilter={spanEventTypeFilter}

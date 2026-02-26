@@ -29,6 +29,7 @@ type TraceTimelinePanelProps = {
   selectedTrace: TraceSummary | null;
   setError: (value: string) => void;
   exportTrace: (traceId: string, format: 'json' | 'csv') => Promise<void>;
+  onOpenSignals?: () => void;
   spanSearch: string;
   setSpanSearch: (value: string) => void;
   spanEventTypeFilter: string;
@@ -71,6 +72,7 @@ export function TraceTimelinePanel({
   selectedTrace,
   setError,
   exportTrace,
+  onOpenSignals,
   spanSearch,
   setSpanSearch,
   spanEventTypeFilter,
@@ -119,6 +121,11 @@ export function TraceTimelinePanel({
         </div>
         {selectedTrace ? (
           <div className="flex items-center gap-2">
+            {onOpenSignals ? (
+              <Button size="sm" variant="secondary" onClick={onOpenSignals}>
+                Open in Signals
+              </Button>
+            ) : null}
             <Button size="sm" variant="secondary" onClick={() => exportTrace(selectedTrace.trace_id, 'json').catch((err) => setError(err.message || 'Export failed'))}>
               Export JSON
             </Button>

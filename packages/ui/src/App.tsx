@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { DebugPanel } from '@/features/debug/DebugPanel';
+import { buildDebugSignalsPrefill } from '@/features/debug/signalsBridge';
 import { exportTrace, formatOffsetMs, formatTick } from '@/features/debug/utils';
 import { OverviewPanel } from '@/features/overview/OverviewPanel';
 import { formatDurationNs } from '@/features/overview/utils';
@@ -16,7 +17,7 @@ import { useTraceData } from '@/hooks/useTraceData';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'overview' | 'debug' | 'session-timeline' | 'signals'>('overview');
-  const [signalsPrefill, setSignalsPrefill] = useState<{ service?: string; sessionKey?: string } | null>(null);
+  const [signalsPrefill, setSignalsPrefill] = useState<{ service?: string; sessionKey?: string; from?: string; to?: string } | null>(null);
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
@@ -245,6 +246,10 @@ export default function App() {
                 formatDurationNs={formatDurationNs}
                 toNumber={toNumber}
                 formatTick={formatTick}
+                onOpenSignals={() => {
+                  setSignalsPrefill(buildDebugSignalsPrefill(selectedTrace, selectedSpan));
+                  setActiveTab('signals');
+                }}
               />
             </TabsContent>
 
