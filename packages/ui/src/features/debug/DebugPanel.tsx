@@ -28,7 +28,13 @@ type DebugPanelProps = {
   traceEventTypeFilter: string;
   setTraceEventTypeFilter: (value: string) => void;
   traceEventTypeOptions: string[];
-  traceEventTypeCoverage: { rows: Array<{ eventType: string; count: number }>; uniqueEventTypes: number };
+  traceEventTypeCoverage: {
+    rows: Array<{ eventType: string; count: number }>;
+    uniqueEventTypes: number;
+    totalTraces: number;
+    singleSpanTraceCount: number;
+    singleSpanRatio: number;
+  };
   selectedTraceId: string | null;
   setSelectedTraceId: (traceId: string) => void;
   selectedTrace: TraceSummary | null;

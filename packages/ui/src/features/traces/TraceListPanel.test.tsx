@@ -46,7 +46,13 @@ describe('TraceListPanel', () => {
         traceEventTypeFilter="all"
         setTraceEventTypeFilter={() => {}}
         traceEventTypeOptions={['root span']}
-        traceEventTypeCoverage={{ rows: [{ eventType: 'root span', count: 1 }], uniqueEventTypes: 1 }}
+        traceEventTypeCoverage={{
+          rows: [{ eventType: 'root span', count: 1 }],
+          uniqueEventTypes: 1,
+          totalTraces: 1,
+          singleSpanTraceCount: 0,
+          singleSpanRatio: 0,
+        }}
         setSelectedTraceId={onSelect}
         formatDurationNs={(n) => String(n)}
         toNumber={(v) => Number(v ?? 0)}
@@ -54,6 +60,7 @@ describe('TraceListPanel', () => {
     );
 
     expect(screen.getByTestId('trace-list-panel')).toBeTruthy();
+    expect(screen.getByText(/single-span traces/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: /root span/i })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /root span/i }));
