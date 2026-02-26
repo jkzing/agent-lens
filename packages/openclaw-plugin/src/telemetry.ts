@@ -8,6 +8,8 @@ export interface ToolCallSpanAttributes {
   status: ToolCallStatus;
   durationMs: number;
   error?: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
 }
 
 export interface ToolCallSpanEvent {

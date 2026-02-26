@@ -5,12 +5,18 @@ export interface OpenClawPluginConfig {
   sampleRate: number;
   includeTools: string[];
   emitSpan?: TelemetryEmitter;
+  maxStringLength: number;
+  inputFieldAllowlist: string[];
+  outputFieldAllowlist: string[];
 }
 
 export const defaultOpenClawPluginConfig: OpenClawPluginConfig = {
   enabled: true,
   sampleRate: 1,
-  includeTools: []
+  includeTools: [],
+  maxStringLength: 120,
+  inputFieldAllowlist: [],
+  outputFieldAllowlist: []
 };
 
 export function parseOpenClawPluginConfig(
@@ -39,6 +45,21 @@ export function parseOpenClawPluginConfig(
     ? candidate.includeTools.filter((tool): tool is string => typeof tool === 'string')
     : defaultOpenClawPluginConfig.includeTools;
 
+  const maxStringLength =
+    typeof candidate.maxStringLength === 'number' &&
+    Number.isFinite(candidate.maxStringLength) &&
+    candidate.maxStringLength >= 8
+      ? Math.floor(candidate.maxStringLength)
+      : defaultOpenClawPluginConfig.maxStringLength;
+
+  const inputFieldAllowlist = Array.isArray(candidate.inputFieldAllowlist)
+    ? candidate.inputFieldAllowlist.filter((field): field is string => typeof field === 'string')
+    : defaultOpenClawPluginConfig.inputFieldAllowlist;
+
+  const outputFieldAllowlist = Array.isArray(candidate.outputFieldAllowlist)
+    ? candidate.outputFieldAllowlist.filter((field): field is string => typeof field === 'string')
+    : defaultOpenClawPluginConfig.outputFieldAllowlist;
+
   const emitSpan = typeof candidate.emitSpan === 'function'
     ? candidate.emitSpan
     : undefined;
@@ -47,6 +68,9 @@ export function parseOpenClawPluginConfig(
     enabled,
     sampleRate,
     includeTools,
-    emitSpan
+    emitSpan,
+    maxStringLength,
+    inputFieldAllowlist,
+    outputFieldAllowlist
   };
 }

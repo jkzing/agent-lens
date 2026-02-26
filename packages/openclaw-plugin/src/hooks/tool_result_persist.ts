@@ -1,5 +1,7 @@
 import type { OpenClawPluginConfig } from '../config.js';
+import { sanitizeAllowlistedFields } from '../sanitize.js';
 import { emitToolCallSpan, normalizeErrorMessage } from '../telemetry.js';
+import { isToolIncluded } from '../tool_filter.js';
 import type { HookRuntimeState } from './before_tool_call.js';
 
 export interface ToolResultPersistPayload {
@@ -53,17 +55,21 @@ export function toolResultPersist(
   config: OpenClawPluginConfig,
   state?: HookRuntimeState
 ): ToolResultPersistResult {
-  const persisted = config.enabled;
+  const isIncluded = isToolIncluded(payload.toolName, config);
+  const persisted = config.enabled && isIncluded;
   const status = payload.success ? 'success' : 'error';
   const fallbackError = payload.success ? undefined : normalizeErrorMessage(payload.error ?? payload.result);
 
-  emitToolCallSpan(config.emitSpan, {
-    toolName: payload.toolName,
-    sessionKey: payload.sessionKey,
-    status,
-    durationMs: resolveDurationMs(payload, state),
-    error: fallbackError
-  });
+  if (persisted) {
+    emitToolCallSpan(config.emitSpan, {
+      toolName: payload.toolName,
+      sessionKey: payload.sessionKey,
+      status,
+      durationMs: resolveDurationMs(payload, state),
+      error: fallbackError,
+      output: sanitizeAllowlistedFields(payload.result, config.outputFieldAllowlist, config.maxStringLength)
+    });
+  }
 
   return {
     persisted

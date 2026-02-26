@@ -1,5 +1,7 @@
 import type { OpenClawPluginConfig } from '../config.js';
+import { sanitizeAllowlistedFields } from '../sanitize.js';
 import { emitToolCallSpan } from '../telemetry.js';
+import { isToolIncluded } from '../tool_filter.js';
 
 export interface BeforeToolCallPayload {
   toolName: string;
@@ -35,9 +37,7 @@ export function beforeToolCall(
   config: OpenClawPluginConfig,
   state?: HookRuntimeState
 ): BeforeToolCallResult {
-  const includeListIsActive = config.includeTools.length > 0;
-  const isIncluded = !includeListIsActive || config.includeTools.includes(payload.toolName);
-
+  const isIncluded = isToolIncluded(payload.toolName, config);
   const accepted = config.enabled && isIncluded;
   const reason = config.enabled
     ? isIncluded
@@ -50,15 +50,15 @@ export function beforeToolCall(
     if (callKey) {
       state?.callStartTimes.set(callKey, Date.now());
     }
-  }
 
-  emitToolCallSpan(config.emitSpan, {
-    toolName: payload.toolName,
-    sessionKey: payload.sessionKey,
-    status: accepted ? 'success' : 'error',
-    durationMs: 0,
-    error: accepted ? undefined : reason
-  });
+    emitToolCallSpan(config.emitSpan, {
+      toolName: payload.toolName,
+      sessionKey: payload.sessionKey,
+      status: 'success',
+      durationMs: 0,
+      input: sanitizeAllowlistedFields(payload.args, config.inputFieldAllowlist, config.maxStringLength)
+    });
+  }
 
   return {
     accepted,
