@@ -10,13 +10,14 @@ import { formatDurationNs } from '@/features/overview/utils';
 import { pickSelectedOverviewStep, useOverviewData } from '@/features/overview/useOverviewData';
 import { SessionTimelinePanel } from '@/features/sessions/SessionTimelinePanel';
 import { SignalsPanel } from '@/features/signals/SignalsPanel';
+import { useMainTabDeepLink } from '@/features/navigation/mainTabDeepLink';
 import { resolveTraceBridge } from '@/features/sessions/traceBridge';
 import { detectSpanType, parseJsonObject, toNumber, useDebugViewState } from '@/hooks/useDebugViewState';
 import { useSessionTimelineData } from '@/hooks/useSessionTimelineData';
 import { useTraceData } from '@/hooks/useTraceData';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'debug' | 'session-timeline' | 'signals'>('overview');
+  const { activeTab, setActiveTab } = useMainTabDeepLink();
   const [signalsPrefill, setSignalsPrefill] = useState<{ service?: string; sessionKey?: string; from?: string; to?: string } | null>(null);
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
