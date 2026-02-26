@@ -43,8 +43,8 @@ describe('SessionTimelinePanel', () => {
             channel: 'telegram',
             state: 'done',
             outcome: 'ok',
-            attributes: null,
-            resource_attributes: null
+            attributes: '{"foo":"bar"}',
+            resource_attributes: '{"service.name":"nyx"}'
           }
         ]}
         timelineLoading={false}
@@ -58,6 +58,56 @@ describe('SessionTimelinePanel', () => {
 
     expect(selected).toEqual(['sess-1']);
     expect(opened).toEqual(['trace-1']);
+    expect(screen.getByTestId('timeline-event-detail')).toBeTruthy();
+    expect(screen.getByText('Event Detail')).toBeTruthy();
+    expect(screen.getByTestId('timeline-event-detail').textContent).toContain('"foo": "bar"');
+  });
+
+  it('shows trace unavailable when trace_id is missing', () => {
+    render(
+      <SessionTimelinePanel
+        query=""
+        setQuery={() => {}}
+        eventTypeFilter="all"
+        setEventTypeFilter={() => {}}
+        eventTypeOptions={[]}
+        overviewItems={[
+          {
+            session_key: 'sess-1',
+            first_seen_unix_nano: 1,
+            last_seen_unix_nano: 2,
+            span_count: 2,
+            trace_count: 1,
+            event_types: ['message.sent'],
+            channel: 'telegram'
+          }
+        ]}
+        overviewLoading={false}
+        overviewError={null}
+        selectedSessionKey={'sess-1'}
+        setSelectedSessionKey={() => {}}
+        timelineItems={[
+          {
+            trace_id: null,
+            span_id: 'span-1',
+            name: 'event-1',
+            start_time_unix_nano: 1,
+            end_time_unix_nano: null,
+            duration_ns: 100,
+            service_name: 'nyx',
+            channel: 'telegram',
+            state: 'done',
+            outcome: 'ok',
+            attributes: null,
+            resource_attributes: null
+          }
+        ]}
+        timelineLoading={false}
+        timelineError={null}
+      />
+    );
+
+    expect(screen.getByText('Trace unavailable')).toBeTruthy();
   });
 
   it('shows loading and empty states', () => {

@@ -1,3 +1,4 @@
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import type { SessionOverviewItem, SessionTimelineItem } from '@/hooks/useSessionTimelineData';
 
@@ -34,6 +35,24 @@ export function SessionTimelinePanel({
   timelineError,
   onOpenTrace
 }: SessionTimelinePanelProps) {
+  const [selectedEventIndex, setSelectedEventIndex] = useState<number>(0);
+
+  useEffect(() => {
+    setSelectedEventIndex(0);
+  }, [selectedSessionKey]);
+
+  useEffect(() => {
+    if (timelineItems.length === 0) {
+      setSelectedEventIndex(0);
+      return;
+    }
+    if (selectedEventIndex >= timelineItems.length) {
+      setSelectedEventIndex(0);
+    }
+  }, [selectedEventIndex, timelineItems]);
+
+  const selectedEvent = timelineItems[selectedEventIndex] ?? null;
+
   return (
     <section className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]" data-testid="session-timeline-panel">
       <aside className="rounded-md border border-border bg-card p-3">
@@ -100,40 +119,24 @@ export function SessionTimelinePanel({
         {!timelineLoading && !timelineError && selectedSessionKey && timelineItems.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">No events for this session.</p>
         ) : null}
+
         {!timelineLoading && !timelineError && timelineItems.length > 0 ? (
-          <div className="mt-3 overflow-auto">
-            <table className="w-full min-w-[740px] text-sm">
-              <thead className="text-left text-xs text-muted-foreground">
-                <tr>
-                  <th className="px-2 py-1">Start</th>
-                  <th className="px-2 py-1">Name</th>
-                  <th className="px-2 py-1">Service</th>
-                  <th className="px-2 py-1">State</th>
-                  <th className="px-2 py-1">Outcome</th>
-                  <th className="px-2 py-1">Trace</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+            <div className="max-h-[640px] overflow-auto pr-1">
+              <ul className="space-y-2">
                 {timelineItems.map((item, index) => (
-                  <tr key={`${item.span_id ?? 'span'}-${index}`} className="border-t border-border">
-                    <td className="px-2 py-1">{formatUnixNano(item.start_time_unix_nano)}</td>
-                    <td className="px-2 py-1">{item.name || '-'}</td>
-                    <td className="px-2 py-1">{item.service_name || '-'}</td>
-                    <td className="px-2 py-1">{item.state || '-'}</td>
-                    <td className="px-2 py-1">{item.outcome || '-'}</td>
-                    <td className="px-2 py-1">
-                      {item.trace_id && onOpenTrace ? (
-                        <button type="button" className="text-xs text-primary underline" onClick={() => onOpenTrace(item.trace_id!)}>
-                          Open Trace
-                        </button>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                  </tr>
+                  <TimelineEventRow
+                    key={`${item.span_id ?? 'span'}-${index}`}
+                    item={item}
+                    isSelected={selectedEventIndex === index}
+                    onSelect={() => setSelectedEventIndex(index)}
+                    onOpenTrace={onOpenTrace}
+                  />
                 ))}
-              </tbody>
-            </table>
+              </ul>
+            </div>
+
+            <EventDetailPanel item={selectedEvent} />
           </div>
         ) : null}
       </section>
@@ -141,7 +144,129 @@ export function SessionTimelinePanel({
   );
 }
 
+type TimelineEventRowProps = {
+  item: SessionTimelineItem;
+  isSelected: boolean;
+  onSelect: () => void;
+  onOpenTrace?: (traceId: string) => void;
+};
+
+const TimelineEventRow = memo(function TimelineEventRow({ item, isSelected, onSelect, onOpenTrace }: TimelineEventRowProps) {
+  const traceAvailable = Boolean(item.trace_id && onOpenTrace);
+  return (
+    <li>
+      <div
+        className={`w-full rounded-md border px-3 py-2 text-left ${isSelected ? 'border-primary bg-primary/10' : 'border-border hover:bg-muted/40'}`}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        aria-label={`Select timeline event ${item.name ?? 'unknown'}`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{item.name || '-'}</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {item.service_name || '-'} · {item.state || '-'} · {item.outcome || '-'}
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-xs text-muted-foreground">{formatUnixNano(item.start_time_unix_nano)}</div>
+            <div className="mt-1 text-[11px] text-muted-foreground">{formatDuration(item.duration_ns)}</div>
+          </div>
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="rounded border border-border px-1.5 py-0.5 text-muted-foreground">{item.channel || 'unknown channel'}</span>
+          {traceAvailable ? (
+            <button
+              type="button"
+              className="text-primary underline"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenTrace?.(item.trace_id!);
+              }}
+            >
+              Open Trace
+            </button>
+          ) : (
+            <span className="text-muted-foreground">Trace unavailable</span>
+          )}
+        </div>
+      </div>
+    </li>
+  );
+});
+
+type EventDetailPanelProps = {
+  item: SessionTimelineItem | null;
+};
+
+function EventDetailPanel({ item }: EventDetailPanelProps) {
+  if (!item) {
+    return <div className="rounded-md border border-border bg-muted/20 p-3 text-sm text-muted-foreground">Select an event to inspect details.</div>;
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/10 p-3" data-testid="timeline-event-detail">
+      <h3 className="text-sm font-medium">Event Detail</h3>
+      <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-y-1 text-xs">
+        <div className="text-muted-foreground">Name</div>
+        <div>{item.name || '-'}</div>
+        <div className="text-muted-foreground">Service</div>
+        <div>{item.service_name || '-'}</div>
+        <div className="text-muted-foreground">Start</div>
+        <div>{formatUnixNano(item.start_time_unix_nano)}</div>
+        <div className="text-muted-foreground">Duration</div>
+        <div>{formatDuration(item.duration_ns)}</div>
+        <div className="text-muted-foreground">Trace ID</div>
+        <div className="break-all">{item.trace_id || '-'}</div>
+      </div>
+
+      <JsonSection title="Attributes" value={item.attributes} />
+      <JsonSection title="Resource Attributes" value={item.resource_attributes} />
+    </div>
+  );
+}
+
+type JsonSectionProps = {
+  title: string;
+  value: string | null;
+};
+
+function JsonSection({ title, value }: JsonSectionProps) {
+  const pretty = useMemo(() => formatJsonString(value), [value]);
+  return (
+    <details className="rounded-md border border-border bg-background/50 p-2" open>
+      <summary className="cursor-pointer text-xs font-medium text-muted-foreground">{title}</summary>
+      <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all text-[11px]">{pretty}</pre>
+    </details>
+  );
+}
+
 function formatUnixNano(value: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return '-';
   return new Date(Math.floor(value / 1_000_000)).toLocaleString();
+}
+
+function formatDuration(value: number | null) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '-';
+  if (value < 1_000) return `${value} ns`;
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(2)} μs`;
+  if (value < 1_000_000_000) return `${(value / 1_000_000).toFixed(2)} ms`;
+  return `${(value / 1_000_000_000).toFixed(2)} s`;
+}
+
+function formatJsonString(value: string | null) {
+  if (!value) return '—';
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
 }
