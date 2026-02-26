@@ -22,6 +22,30 @@ CREATE TABLE IF NOT EXISTS spans (
 );
 CREATE INDEX IF NOT EXISTS idx_spans_received_at ON spans(received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_spans_trace_id ON spans(trace_id);
+
+-- PR4 hardening: expression indexes for session APIs
+CREATE INDEX IF NOT EXISTS idx_spans_session_key_start ON spans(
+  COALESCE(
+    json_extract(attributes, '$."openclaw.sessionKey"'),
+    json_extract(attributes, '$."openclaw.sessionId"'),
+    json_extract(resource_attributes, '$."openclaw.sessionKey"'),
+    json_extract(resource_attributes, '$."openclaw.sessionId"')
+  ),
+  CAST(start_time_unix_nano AS INTEGER),
+  id
+);
+CREATE INDEX IF NOT EXISTS idx_spans_channel_expr ON spans(
+  COALESCE(
+    json_extract(attributes, '$."openclaw.channel"'),
+    json_extract(attributes, '$.channel'),
+    json_extract(resource_attributes, '$."openclaw.channel"'),
+    json_extract(resource_attributes, '$.channel')
+  )
+);
+CREATE INDEX IF NOT EXISTS idx_spans_name_start_time ON spans(
+  name,
+  CAST(start_time_unix_nano AS INTEGER)
+);
 `);
 
   const existingColumns = db

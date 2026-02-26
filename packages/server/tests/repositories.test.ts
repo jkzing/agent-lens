@@ -101,6 +101,20 @@ test('spansRepo pagination query contract: listSpansPage', () => {
   }
 });
 
+test('schema creates session-query hardening indexes', () => {
+  const runtime = createTestDb();
+  try {
+    const indexRows = runtime.db.prepare("PRAGMA index_list('spans')").all() as Array<{ name: string }>;
+    const indexNames = new Set(indexRows.map((row) => row.name));
+
+    assert.ok(indexNames.has('idx_spans_session_key_start'));
+    assert.ok(indexNames.has('idx_spans_channel_expr'));
+    assert.ok(indexNames.has('idx_spans_name_start_time'));
+  } finally {
+    runtime.cleanup();
+  }
+});
+
 test('tracesRepo csv export data shape baseline: listTraceSpansForExport', () => {
   const runtime = createTestDb();
   try {
