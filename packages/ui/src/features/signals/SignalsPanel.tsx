@@ -15,6 +15,8 @@ export function SignalsPanel({ initialFilters }: SignalsPanelProps) {
     setMetricName,
     severity,
     setSeverity,
+    activeTab,
+    setActiveTab,
     metricsItems,
     metricsLoading,
     metricsError,
@@ -31,8 +33,22 @@ export function SignalsPanel({ initialFilters }: SignalsPanelProps) {
     selectedLogRecord,
     selectedLogRecordId,
     setSelectedLogRecordId,
-    applyFilters
+    applyFilters,
+    resetFilters
   } = useSignalRecordsData(initialFilters);
+
+  const activeFilterHints = useMemo(() => {
+    const rows = [
+      filters.from && `from=${filters.from}`,
+      filters.to && `to=${filters.to}`,
+      filters.service && `service=${filters.service}`,
+      filters.sessionKey && `sessionKey=${filters.sessionKey}`,
+      filters.parseStatus !== 'all' && `parseStatus=${filters.parseStatus}`,
+      metricName && `metricName=${metricName}`,
+      severity && `severity=${severity}`
+    ].filter(Boolean) as string[];
+    return rows;
+  }, [filters, metricName, severity]);
 
   return (
     <section className="space-y-4" data-testid="signals-panel">
@@ -50,40 +66,75 @@ export function SignalsPanel({ initialFilters }: SignalsPanelProps) {
           </select>
           <Input aria-label="Filter metric name" placeholder="metricName" value={metricName} onChange={(e) => setMetricName(e.target.value)} />
           <Input aria-label="Filter severity" placeholder="severity" value={severity} onChange={(e) => setSeverity(e.target.value)} />
-          <button
-            type="button"
-            className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted"
-            onClick={() => applyFilters()}
-          >
-            Apply
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted"
+              onClick={() => applyFilters()}
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm hover:bg-muted"
+              onClick={() => resetFilters()}
+            >
+              Reset
+            </button>
+          </div>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-muted-foreground">Focus:</span>
+        <button
+          type="button"
+          className={`rounded border px-2 py-1 ${activeTab === 'metrics' ? 'border-primary text-primary' : 'border-border text-muted-foreground'}`}
+          onClick={() => setActiveTab('metrics')}
+        >
+          metrics
+        </button>
+        <button
+          type="button"
+          className={`rounded border px-2 py-1 ${activeTab === 'logs' ? 'border-primary text-primary' : 'border-border text-muted-foreground'}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          logs
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <RecordSection
           title="Metrics records"
           type="metrics"
+          activeFilterHints={activeFilterHints}
           items={metricsItems}
           loading={metricsLoading}
           error={metricsError}
           selectedId={selectedMetricRecordId}
           onSelect={setSelectedMetricRecordId}
           pagination={metricsPagination}
-          setPagination={setMetricsPagination}
+          setPagination={(updater) => {
+            setActiveTab('metrics');
+            setMetricsPagination(updater);
+          }}
           detail={selectedMetricRecord}
         />
 
         <RecordSection
           title="Logs records"
           type="logs"
+          activeFilterHints={activeFilterHints}
           items={logsItems}
           loading={logsLoading}
           error={logsError}
           selectedId={selectedLogRecordId}
           onSelect={setSelectedLogRecordId}
           pagination={logsPagination}
-          setPagination={setLogsPagination}
+          setPagination={(updater) => {
+            setActiveTab('logs');
+            setLogsPagination(updater);
+          }}
           detail={selectedLogRecord}
         />
       </div>
@@ -94,6 +145,7 @@ export function SignalsPanel({ initialFilters }: SignalsPanelProps) {
 type RecordSectionProps = {
   title: string;
   type: 'metrics' | 'logs';
+  activeFilterHints: string[];
   items: Array<MetricRecord | LogRecord>;
   loading: boolean;
   error: string | null;
@@ -104,7 +156,7 @@ type RecordSectionProps = {
   detail: MetricRecord | LogRecord | null;
 };
 
-function RecordSection({ title, type, items, loading, error, selectedId, onSelect, pagination, setPagination, detail }: RecordSectionProps) {
+function RecordSection({ title, type, activeFilterHints, items, loading, error, selectedId, onSelect, pagination, setPagination, detail }: RecordSectionProps) {
   const currentPage = Math.floor(pagination.offset / pagination.limit) + 1;
   const maxPage = Math.max(1, Math.ceil(pagination.total / pagination.limit));
 
@@ -133,7 +185,12 @@ function RecordSection({ title, type, items, loading, error, selectedId, onSelec
       <div className="mt-3 max-h-[360px] overflow-auto">
         {loading ? <p className="text-sm text-muted-foreground">Loading {type} records…</p> : null}
         {!loading && error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {!loading && !error && items.length === 0 ? <p className="text-sm text-muted-foreground">No {type} records found.</p> : null}
+        {!loading && !error && items.length === 0 ? (
+          <div className="space-y-1 text-sm text-muted-foreground">
+            <p>No {type} records found.</p>
+            {activeFilterHints.length > 0 ? <p>Active filters: {activeFilterHints.join(', ')}</p> : <p>Tip: set service/session/time filters to narrow down results.</p>}
+          </div>
+        ) : null}
         {!loading && !error && items.length > 0 ? (
           <ul className="space-y-1" data-testid={`${type}-records-list`}>
             {items.map((item) => {

@@ -58,6 +58,7 @@ describe('TraceTimelinePanel', () => {
   it('renders timeline panel and supports span + filter interactions', () => {
     const selected: number[] = [];
     const setSpanSearchCalls: string[] = [];
+    const openSignalsCalls: number[] = [];
 
     render(
       <TooltipProvider>
@@ -69,6 +70,7 @@ describe('TraceTimelinePanel', () => {
           selectedTrace={trace}
           setError={() => {}}
           exportTrace={async () => {}}
+          onOpenSignals={() => openSignalsCalls.push(1)}
           spanSearch="tool"
           setSpanSearch={(v) => setSpanSearchCalls.push(v)}
           spanEventTypeFilter="all"
@@ -104,5 +106,8 @@ describe('TraceTimelinePanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(setSpanSearchCalls).toContain('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Signals' }));
+    expect(openSignalsCalls).toEqual([1]);
   });
 });

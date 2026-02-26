@@ -4,10 +4,13 @@ import { SignalsPanel } from './SignalsPanel';
 
 describe('SignalsPanel', () => {
   const originalFetch = globalThis.fetch;
+  const originalReplaceState = window.history.replaceState;
 
   afterEach(() => {
     cleanup();
     globalThis.fetch = originalFetch;
+    window.history.replaceState = originalReplaceState;
+    window.history.replaceState({}, '', '/');
   });
 
   it('loads metrics/logs and renders detail panel', async () => {
@@ -69,34 +72,103 @@ describe('SignalsPanel', () => {
     expect(screen.getAllByText('Raw payload preview').length).toBeGreaterThan(0);
   });
 
-  it('passes filters through query params', async () => {
+  it('hydrates filters from URL and persists updates', async () => {
+    const replaceCalls: string[] = [];
+    window.history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
+      replaceCalls.push(String(url || ''));
+      return originalReplaceState.call(window.history, data as any, unused, url as any);
+    }) as History['replaceState'];
+    window.history.pushState({}, '', '/?service=url-svc&sessionKey=url-sess&parseStatus=error&tab=logs&page=3&limit=10&metricName=cpu&severity=WARN');
+
+    const urls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      urls.push(url);
+      const query = url.split('?')[1] || '';
+      const params = new URLSearchParams(query);
+      return {
+        ok: true,
+        json: async () => ({
+          items: [],
+          pagination: {
+            limit: Number(params.get('limit') || 20),
+            offset: Number(params.get('offset') || 0),
+            total: 100
+          }
+        })
+      } as Response;
+    }) as typeof fetch;
+
+    render(<SignalsPanel />);
+
+    await waitFor(() => {
+      const metric = urls.find((url) => url.includes('/api/metrics/records?')) || '';
+      const logs = urls.find((url) => url.includes('/api/logs/records?')) || '';
+      expect(metric).toContain('service=url-svc');
+      expect(metric).toContain('sessionKey=url-sess');
+      expect(metric).toContain('parseStatus=error');
+      expect(metric).toContain('metricName=cpu');
+      expect(logs).toContain('severity=WARN');
+      expect(logs).toContain('limit=10');
+      expect(logs).toContain('offset=20');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'metrics' }));
+    fireEvent.change(screen.getByLabelText('Filter service'), { target: { value: 'svc-a' } });
+
+    await waitFor(() => {
+      const lastUrl = replaceCalls.at(-1) || '';
+      expect(lastUrl).toContain('service=svc-a');
+      expect(lastUrl).toContain('tab=metrics');
+      expect(lastUrl).toContain('page=1');
+      expect(lastUrl).toContain('limit=20');
+    });
+  });
+
+  it('preserves URL-derived filter state across remount', async () => {
+    window.history.replaceState({}, '', '/?service=sticky-svc&sessionKey=sticky-sess&tab=logs&page=2&limit=10');
+
+    globalThis.fetch = (async () => {
+      return {
+        ok: true,
+        json: async () => ({ items: [], pagination: { limit: 10, offset: 10, total: 20 } })
+      } as Response;
+    }) as typeof fetch;
+
+    const { unmount } = render(<SignalsPanel />);
+    await waitFor(() => expect(screen.getByDisplayValue('sticky-svc')).toBeTruthy());
+    unmount();
+
+    render(<SignalsPanel />);
+    await waitFor(() => expect(screen.getByDisplayValue('sticky-svc')).toBeTruthy());
+    expect((screen.getByLabelText('Filter session key') as HTMLInputElement).value).toBe('sticky-sess');
+  });
+
+  it('supports reset filters behavior and empty state hint', async () => {
     const urls: string[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       urls.push(String(input));
       return {
         ok: true,
-        json: async () => ({ items: [], pagination: { limit: 20, offset: 0, total: 0 } })
+        json: async () => ({ items: [], pagination: { limit: 20, offset: 40, total: 0 } })
       } as Response;
     }) as typeof fetch;
 
     render(<SignalsPanel />);
-    await waitFor(() => expect(urls.length).toBeGreaterThan(1));
 
     fireEvent.change(screen.getByLabelText('Filter service'), { target: { value: 'svc-a' } });
     fireEvent.change(screen.getByLabelText('Filter session key'), { target: { value: 'sess-1' } });
-    fireEvent.change(screen.getByLabelText('Filter parse status'), { target: { value: 'error' } });
-    fireEvent.change(screen.getByLabelText('Filter metric name'), { target: { value: 'latency_ms' } });
-    fireEvent.change(screen.getByLabelText('Filter severity'), { target: { value: 'WARN' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
 
     await waitFor(() => {
-      const lastMetrics = urls.filter((url) => url.includes('/api/metrics/records?')).at(-1) || '';
-      const lastLogs = urls.filter((url) => url.includes('/api/logs/records?')).at(-1) || '';
-      expect(lastMetrics).toContain('service=svc-a');
-      expect(lastMetrics).toContain('sessionKey=sess-1');
-      expect(lastMetrics).toContain('parseStatus=error');
-      expect(lastMetrics).toContain('metricName=latency_ms');
-      expect(lastLogs).toContain('severity=WARN');
+      expect((screen.getByLabelText('Filter service') as HTMLInputElement).value).toBe('');
+      expect((screen.getByLabelText('Filter session key') as HTMLInputElement).value).toBe('');
+      const latestMetric = urls.filter((url) => url.includes('/api/metrics/records?')).at(-1) || '';
+      expect(latestMetric).toContain('offset=0');
+      expect(latestMetric).not.toContain('service=svc-a');
     });
+
+    expect(screen.getAllByText(/Tip: set service\/session\/time filters/).length).toBeGreaterThan(0);
   });
 
   it('renders empty and error states', async () => {
