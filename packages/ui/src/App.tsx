@@ -7,10 +7,13 @@ import { exportTrace, formatOffsetMs, formatTick } from '@/features/debug/utils'
 import { OverviewPanel } from '@/features/overview/OverviewPanel';
 import { formatDurationNs } from '@/features/overview/utils';
 import { pickSelectedOverviewStep, useOverviewData } from '@/features/overview/useOverviewData';
+import { SessionTimelinePanel } from '@/features/sessions/SessionTimelinePanel';
 import { detectSpanType, parseJsonObject, toNumber, useDebugViewState } from '@/hooks/useDebugViewState';
+import { useSessionTimelineData } from '@/hooks/useSessionTimelineData';
 import { useTraceData } from '@/hooks/useTraceData';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'overview' | 'debug' | 'session-timeline'>('overview');
   const [range, setRange] = useState<'all' | '15m' | '1h' | '24h'>('all');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [agentFilter, setAgentFilter] = useState<string>('all');
@@ -33,6 +36,22 @@ export default function App() {
     setError,
     refreshAll
   } = useTraceData(autoRefresh);
+
+  const {
+    query: sessionQuery,
+    setQuery: setSessionQuery,
+    eventTypeFilter: sessionEventTypeFilter,
+    setEventTypeFilter: setSessionEventTypeFilter,
+    eventTypeOptions: sessionEventTypeOptions,
+    overviewItems: sessionOverviewItems,
+    overviewLoading: sessionOverviewLoading,
+    overviewError: sessionOverviewError,
+    selectedSessionKey,
+    setSelectedSessionKey,
+    timelineItems: sessionTimelineItems,
+    timelineLoading: sessionTimelineLoading,
+    timelineError: sessionTimelineError
+  } = useSessionTimelineData();
 
   const agentOptions = useMemo(() => {
     const set = new Set<string>();
@@ -146,10 +165,11 @@ export default function App() {
 
           {error ? <div className="mb-3 rounded-md border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-destructive">{error}</div> : null}
 
-          <Tabs defaultValue="overview" className="space-y-4">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'overview' | 'debug' | 'session-timeline')} className="space-y-4">
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="debug">Debug</TabsTrigger>
+              <TabsTrigger value="session-timeline">Session Timeline</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-0">
@@ -219,6 +239,28 @@ export default function App() {
                 formatDurationNs={formatDurationNs}
                 toNumber={toNumber}
                 formatTick={formatTick}
+              />
+            </TabsContent>
+
+            <TabsContent value="session-timeline" className="mt-0">
+              <SessionTimelinePanel
+                query={sessionQuery}
+                setQuery={setSessionQuery}
+                eventTypeFilter={sessionEventTypeFilter}
+                setEventTypeFilter={setSessionEventTypeFilter}
+                eventTypeOptions={sessionEventTypeOptions}
+                overviewItems={sessionOverviewItems}
+                overviewLoading={sessionOverviewLoading}
+                overviewError={sessionOverviewError}
+                selectedSessionKey={selectedSessionKey}
+                setSelectedSessionKey={setSelectedSessionKey}
+                timelineItems={sessionTimelineItems}
+                timelineLoading={sessionTimelineLoading}
+                timelineError={sessionTimelineError}
+                onOpenTrace={(traceId) => {
+                  setSelectedTraceId(traceId);
+                  setActiveTab('debug');
+                }}
               />
             </TabsContent>
           </Tabs>
